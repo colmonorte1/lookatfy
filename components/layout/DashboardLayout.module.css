@@ -1,0 +1,46 @@
+/* Shared styles for Dashboard Layouts (Admin, Expert, User) */
+
+.layout {
+    display: flex;
+    min-height: 100vh;
+    background-color: rgb(var(--background));
+}
+
+.mainWrapper {
+    flex: 1;
+    margin-left: 260px;
+    /* Must match Sidebar width */
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.contentContainer {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    /* Centers the content */
+    padding: 2rem;
+}
+
+/* 
+   Simple responsive adjustment:
+   On smaller screens, remove margin and maybe hide sidebar (requires JS logic for toggle)
+   For now, we ensure content doesn't break. 
+*/
+@media (max-width: 1024px) {
+    .contentContainer {
+        padding: 1.5rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .mainWrapper {
+        margin-left: 0;
+        /* Sidebar likely hidden or overlays */
+    }
+
+    .contentContainer {
+        padding: 1rem;
+    }
+}
