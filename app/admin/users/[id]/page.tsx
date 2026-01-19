@@ -1,40 +1,59 @@
-"use client";
-
-import { use } from 'react';
+import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { ArrowLeft, CreditCard, Calendar, Video, PlayCircle, CheckCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
-import { USERS_MOCK } from '@/lib/data/users';
+import { notFound } from 'next/navigation';
 
-// Mock data extension for specific user details
-const USER_DETAILS = {
-    totalSpend: 540.00,
-    sessionsAttended: 12,
-    recordingsCount: 8,
-    joinedDate: '22 May 2023',
-    location: 'Barcelona, España',
-    bookings: [
-        { id: 'BK-101', date: '2024-01-20', expert: 'Laura García', service: 'Asesoría de Estilo', price: 120, status: 'upcoming' },
-        { id: 'BK-098', date: '2024-01-10', expert: 'Pedro Martinez', service: 'Consulta Legal', price: 80, status: 'completed' },
-        { id: 'BK-085', date: '2023-12-15', expert: 'Ana Vega', service: 'Clase de Yoga', price: 30, status: 'completed' },
-        { id: 'BK-072', date: '2023-11-30', expert: 'Laura García', service: 'Revisión Armario', price: 100, status: 'completed' },
-    ],
-    recordings: [
-        { id: 'REC-001', title: 'Consulta Legal - Dudas Contrato', expert: 'Pedro Martinez', date: '10 Ene 2024', duration: '45 min' },
-        { id: 'REC-002', title: 'Clase de Yoga - Respiración', expert: 'Ana Vega', date: '15 Dic 2023', duration: '60 min' },
-        { id: 'REC-003', title: 'Revisión de Armario - Temporada Invierno', expert: 'Laura García', date: '30 Nov 2023', duration: '55 min' },
-    ]
-};
+export default async function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params;
+    const supabase = await createClient();
 
-export default function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = use(params);
+    // 1. Fetch Profile
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-    const userBasic = USERS_MOCK.find(u => u.id === id) || {
-        name: 'Usuario Desconocido',
-        email: 'N/A',
-        role: 'user',
-        status: 'inactive',
-        joinedAt: 'N/A'
+    if (profileError || !profile) {
+        notFound();
+    }
+
+    // 2. Fetch Bookings (Join with Expert->Profile and Service)
+    const { data: bookings } = await supabase
+        .from('bookings')
+        .select(`
+            *,
+            expert:experts!expert_id(
+                profile:profiles(full_name)
+            ),
+            service:services!service_id(title)
+        `)
+        .eq('user_id', id)
+        .order('date', { ascending: false });
+
+    // 3. Calculate KPIs
+    const userBookings = bookings || [];
+    const totalSpend = userBookings.reduce((sum, b) => {
+        if (b.status === 'completed' || b.status === 'confirmed') {
+            return sum + (Number(b.price) || 0);
+        }
+        return sum;
+    }, 0);
+
+    const sessionsAttended = userBookings.filter(b => b.status === 'completed').length;
+    const upcomingSessions = userBookings.filter(b => b.status === 'confirmed').length;
+
+    // Recordings placeholder (We don't have recordings table yet)
+    const recordingsCount = 0;
+
+    // Helper for formatting currency
+    const formatMoney = (amount: number, currency = 'USD') => {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currency,
+            minimumFractionDigits: 2
+        }).format(amount);
     };
 
     return (
@@ -49,38 +68,43 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
                         <div style={{
                             width: '80px', height: '80px', borderRadius: '50%',
                             background: 'rgb(var(--surface-hover))', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '2rem', fontWeight: 700
+                            fontSize: '2rem', fontWeight: 700, overflow: 'hidden'
                         }}>
-                            {userBasic.name.charAt(0)}
+                            {profile.avatar_url ? (
+                                <img src={profile.avatar_url} alt={profile.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                                (profile.full_name || '?').charAt(0).toUpperCase()
+                            )}
                         </div>
                         <div>
-                            <h1 style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>{userBasic.name}</h1>
+                            <h1 style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>{profile.full_name || 'Sin Nombre'}</h1>
                             <div style={{ display: 'flex', gap: '1rem', color: 'rgb(var(--text-secondary))' }}>
-                                <span>{userBasic.email}</span>
+                                <span>{profile.email}</span>
                                 <span>•</span>
-                                <span>{USER_DETAILS.location}</span>
+                                <span>{profile.city ? `${profile.city}, ${profile.country || ''}` : 'Ubicación no disponible'}</span>
                             </div>
                             <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <span style={{
                                     fontSize: '0.8rem', padding: '0.1rem 0.5rem', borderRadius: '4px',
                                     border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))'
                                 }}>
-                                    ID: {id}
+                                    ID: {id.slice(0, 8)}...
                                 </span>
                                 <span style={{
                                     fontSize: '0.8rem', padding: '0.1rem 0.5rem', borderRadius: '4px',
-                                    background: userBasic.status === 'active' ? 'rgba(var(--success), 0.1)' : 'rgba(var(--warning), 0.1)',
-                                    color: userBasic.status === 'active' ? 'rgb(var(--success))' : 'rgb(var(--warning))',
+                                    background: 'rgba(var(--success), 0.1)',
+                                    color: 'rgb(var(--success))',
                                     fontWeight: 600
                                 }}>
-                                    {userBasic.status === 'active' ? 'Activo' : 'Inactivo'}
+                                    Activo
                                 </span>
                             </div>
                         </div>
                     </div>
+                    {/* Actions currently disabled/placeholder */}
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <Button variant="outline">Enviar Mensaje</Button>
-                        <Button style={{ background: 'rgb(var(--text-main))', color: 'rgb(var(--surface))' }}>Editar Usuario</Button>
+                        <Button variant="outline" disabled>Enviar Mensaje</Button>
+                        <Button style={{ background: 'rgb(var(--text-main))', color: 'rgb(var(--surface))' }} disabled>Editar Usuario</Button>
                     </div>
                 </div>
             </div>
@@ -92,28 +116,30 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
                         <span style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem' }}>Gasto Total</span>
                         <CreditCard size={18} color="rgb(var(--primary))" />
                     </div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>${USER_DETAILS.totalSpend.toLocaleString()}</div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatMoney(totalSpend)}</div>
                 </div>
                 <div style={{ background: 'rgb(var(--surface))', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.5rem' }}>
                         <span style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem' }}>Sesiones Asistidas</span>
                         <Video size={18} color="rgb(var(--secondary))" />
                     </div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{USER_DETAILS.sessionsAttended}</div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{sessionsAttended}</div>
                 </div>
                 <div style={{ background: 'rgb(var(--surface))', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.5rem' }}>
-                        <span style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem' }}>Grabaciones</span>
-                        <PlayCircle size={18} color="rgb(var(--error))" />
+                        <span style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem' }}>Próximas</span>
+                        <Calendar size={18} color="rgb(var(--warning))" />
                     </div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{USER_DETAILS.recordingsCount}</div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{upcomingSessions}</div>
                 </div>
                 <div style={{ background: 'rgb(var(--surface))', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.5rem' }}>
-                        <span style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem' }}>Miembro Desde</span>
+                        <span style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem' }}>Registrado</span>
                         <Calendar size={18} color="rgb(var(--text-muted))" />
                     </div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 600, marginTop: '0.5rem' }}>{userBasic.joinedAt}</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 600, marginTop: '0.5rem' }}>
+                        {profile.created_at ? new Date(profile.created_at).toLocaleDateString() : 'N/A'}
+                    </div>
                 </div>
             </div>
 
@@ -122,70 +148,61 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
                 <div style={{ background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))', overflow: 'hidden' }}>
                     <div style={{ padding: '1.5rem', borderBottom: '1px solid rgb(var(--border))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Calendar size={18} /> Servicios Contratados
+                            <Calendar size={18} /> Historial de Reservas
                         </h3>
                     </div>
                     <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                            <tbody>
-                                {USER_DETAILS.bookings.map(booking => (
-                                    <tr key={booking.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
-                                        <td style={{ padding: '1rem' }}>
-                                            <div style={{ fontWeight: 600 }}>{booking.service}</div>
-                                            <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>con {booking.expert}</div>
-                                        </td>
-                                        <td style={{ padding: '1rem' }}>
-                                            <div style={{ fontSize: '0.9rem' }}>{booking.date}</div>
-                                        </td>
-                                        <td style={{ padding: '1rem', textAlign: 'right' }}>
-                                            <span style={{
-                                                fontSize: '0.75rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '4px',
-                                                background: booking.status === 'completed' ? 'rgba(var(--success), 0.1)' : 'rgba(var(--primary), 0.1)',
-                                                color: booking.status === 'completed' ? 'rgb(var(--success))' : 'rgb(var(--primary))'
-                                            }}>
-                                                {booking.status === 'completed' ? 'Completado' : 'Próximo'}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                        {userBookings.length === 0 ? (
+                            <div style={{ padding: '2rem', textAlign: 'center', color: 'rgb(var(--text-secondary))' }}>
+                                No hay reservas registradas.
+                            </div>
+                        ) : (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                                <tbody>
+                                    {userBookings.map((booking: any) => (
+                                        <tr key={booking.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
+                                            <td style={{ padding: '1rem' }}>
+                                                <div style={{ fontWeight: 600 }}>{booking.service?.title || 'Servicio Eliminado'}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>con {booking.expert?.profile?.full_name || 'Experto'}</div>
+                                            </td>
+                                            <td style={{ padding: '1rem' }}>
+                                                <div style={{ fontSize: '0.9rem' }}>{booking.date}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>{booking.time}</div>
+                                            </td>
+                                            <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                                <span style={{
+                                                    fontSize: '0.75rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '4px',
+                                                    background: booking.status === 'completed' ? 'rgba(var(--success), 0.1)' :
+                                                        booking.status === 'confirmed' ? 'rgba(var(--success), 0.1)' :
+                                                            booking.status === 'pending' ? 'rgba(var(--warning), 0.1)' :
+                                                                'rgba(var(--error), 0.1)',
+                                                    color: booking.status === 'completed' ? 'rgb(var(--success))' :
+                                                        booking.status === 'confirmed' ? 'rgb(var(--success))' :
+                                                            booking.status === 'pending' ? 'rgb(var(--warning))' :
+                                                                'rgb(var(--error))',
+                                                    textTransform: 'capitalize'
+                                                }}>
+                                                    {booking.status}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </div>
 
-                {/* Recordings Section */}
-                <div style={{ background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))', overflow: 'hidden' }}>
+                {/* Recordings Section (Placeholder for now) */}
+                <div style={{ background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))', overflow: 'hidden', opacity: 0.5 }}>
                     <div style={{ padding: '1.5rem', borderBottom: '1px solid rgb(var(--border))' }}>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <PlayCircle size={18} /> Grabaciones Disponibles
                         </h3>
                     </div>
-                    <div style={{ padding: '1rem' }}>
-                        {USER_DETAILS.recordings.map(rec => (
-                            <div key={rec.id} style={{
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                padding: '1rem', borderBottom: '1px solid rgb(var(--border))',
-                                marginBottom: '0.5rem'
-                            }}>
-                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                    <div style={{
-                                        width: '40px', height: '40px', borderRadius: '8px',
-                                        background: 'rgb(var(--surface-hover))', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                    }}>
-                                        <PlayCircle size={20} color="rgb(var(--text-secondary))" />
-                                    </div>
-                                    <div>
-                                        <div style={{ fontWeight: 600 }}>{rec.title}</div>
-                                        <div style={{ fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>
-                                            {rec.expert} • {rec.date}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div style={{ fontSize: '0.85rem', color: 'rgb(var(--text-muted))', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                    <Clock size={14} /> {rec.duration}
-                                </div>
-                            </div>
-                        ))}
+                    <div style={{ padding: '2rem', textAlign: 'center', color: 'rgb(var(--text-secondary))' }}>
+                        <p>No hay grabaciones disponibles por el momento.</p>
+                        <p style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>(Funcionalidad pendiente de integración de almacenamiento)</p>
                     </div>
                 </div>
             </div>

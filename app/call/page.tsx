@@ -11,6 +11,7 @@ function CallContent() {
     const searchParams = useSearchParams();
     const initialRoomUrl = searchParams.get('roomUrl') || '';
     const initialUserName = searchParams.get('userName') || '';
+    const bookingId = searchParams.get('bookingId') || '';
 
     const [roomUrl, setRoomUrl] = useState(initialRoomUrl);
     const [userName, setUserName] = useState(initialUserName);
@@ -24,7 +25,7 @@ function CallContent() {
     if (isJoined && roomUrl) {
         return (
             <div style={{ height: '100vh', width: '100vw' }}>
-                <VideoCall roomUrl={roomUrl} userName={userName || 'Invitado'} />
+                <VideoCall roomUrl={roomUrl} userName={userName || 'Invitado'} bookingId={bookingId} />
             </div>
         );
     }

@@ -1,12 +1,29 @@
-"use client";
-
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button/Button';
-import { USERS_MOCK } from '@/lib/data/users';
-import { Plus, Edit2, Trash2, CheckCircle, XCircle, Eye, Ban } from 'lucide-react';
+import { Plus, CheckCircle, XCircle } from 'lucide-react';
+import { createClient } from '@/utils/supabase/server';
+import { ExpertActions } from '@/components/admin/ExpertActions';
 
-export default function AdminExpertsPage() {
-    const experts = USERS_MOCK.filter(u => u.role === 'expert');
+export default async function AdminExpertsPage() {
+    const supabase = await createClient();
+
+    // Fetch experts with joined profile data
+    const { data: experts, error } = await supabase
+        .from('experts')
+        .select(`
+            *,
+            profiles (
+                full_name,
+                email
+            )
+        `)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error("Error fetching experts:", error);
+    }
+
+    const expertList = experts || [];
 
     return (
         <div>
@@ -32,61 +49,49 @@ export default function AdminExpertsPage() {
                             <th style={{ padding: '1rem', fontWeight: 600, fontSize: '0.875rem' }}>Experto</th>
                             <th style={{ padding: '1rem', fontWeight: 600, fontSize: '0.875rem' }}>Email</th>
                             <th style={{ padding: '1rem', fontWeight: 600, fontSize: '0.875rem' }}>Estado</th>
-                            <th style={{ padding: '1rem', fontWeight: 600, fontSize: '0.875rem' }}>Fecha Registro</th>
+                            <th style={{ padding: '1rem', fontWeight: 600, fontSize: '0.875rem' }}>Título</th>
                             <th style={{ padding: '1rem', textAlign: 'right' }}>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {experts.map(expert => (
-                            <tr key={expert.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
-                                <td style={{ padding: '1rem' }}>
-                                    <div style={{ fontWeight: 600 }}>{expert.name}</div>
-                                </td>
-                                <td style={{ padding: '1rem', color: 'rgb(var(--text-secondary))' }}>{expert.email}</td>
-                                <td style={{ padding: '1rem' }}>
-                                    <span style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '0.25rem',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 600,
-                                        padding: '0.25rem 0.75rem',
-                                        borderRadius: '1rem',
-                                        background: expert.status === 'active' ? 'rgba(var(--success), 0.1)' : 'rgba(var(--warning), 0.1)',
-                                        color: expert.status === 'active' ? 'rgb(var(--success))' : 'rgb(var(--warning))'
-                                    }}>
-                                        {expert.status === 'active' ? <CheckCircle size={14} /> : <XCircle size={14} />}
-                                        {expert.status === 'active' ? 'Verificado' : 'Pendiente'}
-                                    </span>
-                                </td>
-                                <td style={{ padding: '1rem', color: 'rgb(var(--text-secondary))', fontSize: '0.875rem' }}>
-                                    {expert.joinedAt}
-                                </td>
-                                <td style={{ padding: '1rem', textAlign: 'right' }}>
-                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                                        <Link href={`/admin/experts/${expert.id}`}>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                title="Ver Dashboard"
-                                            >
-                                                <Eye size={16} />
-                                            </Button>
-                                        </Link>
-                                        <Button variant="ghost" size="sm" title="Editar">
-                                            <Edit2 size={16} />
-                                        </Button>
-                                        <Button variant="ghost" size="sm" style={{ color: 'rgb(var(--warning))' }} title="Suspender">
-                                            <Ban size={16} />
-                                        </Button>
-                                        <Button variant="ghost" size="sm" style={{ color: 'rgb(var(--error))' }} title="Eliminar">
-                                            <Trash2 size={16} />
-                                        </Button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                        {experts.length === 0 && (
+                        {expertList.map((expert: any) => {
+                            // Type guard/check for joined data
+                            const profile = expert.profiles as any;
+                            const fullName = profile?.full_name || 'Sin Nombre';
+                            const email = profile?.email || 'No email';
+
+                            return (
+                                <tr key={expert.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
+                                    <td style={{ padding: '1rem' }}>
+                                        <div style={{ fontWeight: 600 }}>{fullName}</div>
+                                    </td>
+                                    <td style={{ padding: '1rem', color: 'rgb(var(--text-secondary))' }}>{email}</td>
+                                    <td style={{ padding: '1rem' }}>
+                                        <span style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.25rem',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            padding: '0.25rem 0.75rem',
+                                            borderRadius: '1rem',
+                                            background: expert.verified ? 'rgba(var(--success), 0.1)' : 'rgba(var(--warning), 0.1)',
+                                            color: expert.verified ? 'rgb(var(--success))' : 'rgb(var(--warning))'
+                                        }}>
+                                            {expert.verified ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                                            {expert.verified ? 'Verificado' : 'Pendiente'}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '1rem', color: 'rgb(var(--text-secondary))', fontSize: '0.875rem' }}>
+                                        {expert.title || 'N/A'}
+                                    </td>
+                                    <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                        <ExpertActions expertId={expert.id} isVerified={expert.verified} />
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {expertList.length === 0 && (
                             <tr>
                                 <td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: 'rgb(var(--text-secondary))' }}>
                                     No se encontraron expertos registrados.

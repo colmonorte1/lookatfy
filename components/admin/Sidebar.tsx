@@ -1,9 +1,10 @@
 "use client";
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, Users, Video, Settings, LogOut, ShoppingBag, DollarSign, Wallet, ShieldAlert } from 'lucide-react';
 import styles from './Sidebar.module.css';
+import { createClient } from '@/utils/supabase/client';
 
 const MENU_ITEMS = [
     { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -18,6 +19,14 @@ const MENU_ITEMS = [
 
 export const Sidebar = () => {
     const pathname = usePathname();
+    const router = useRouter();
+
+    const handleLogout = async () => {
+        const supabase = createClient();
+        await supabase.auth.signOut();
+        router.push('/login');
+        router.refresh();
+    };
 
     return (
         <aside className={styles.sidebar}>
@@ -44,7 +53,7 @@ export const Sidebar = () => {
             </nav>
 
             <div className={styles.footer}>
-                <button className={styles.logoutBtn}>
+                <button className={styles.logoutBtn} onClick={handleLogout}>
                     <LogOut size={20} />
                     <span>Cerrar Sesión</span>
                 </button>

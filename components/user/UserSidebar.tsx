@@ -1,9 +1,10 @@
 "use client";
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Home, User, Calendar, Search, LogOut, Settings, Video, CreditCard } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Home, User, Calendar, Search, LogOut, Settings, Video, CreditCard, AlertCircle } from 'lucide-react';
 import styles from '../expert/ExpertSidebar.module.css'; // Reusing expert sidebar styles for consistency
+import { createClient } from '@/utils/supabase/client';
 
 const MENU_ITEMS = [
     { href: '/user', label: 'Inicio', icon: Home },
@@ -11,11 +12,20 @@ const MENU_ITEMS = [
     { href: '/user/bookings', label: 'Mis Reservas', icon: Calendar },
     { href: '/user/recordings', label: 'Mis Grabaciones', icon: Video },
     { href: '/user/payments', label: 'Pagos', icon: CreditCard },
+    { href: '/user/disputes', label: 'Disputas', icon: AlertCircle },
     { href: '/user/profile', label: 'Mi Perfil', icon: User },
 ];
 
 export const UserSidebar = () => {
     const pathname = usePathname();
+    const router = useRouter();
+
+    const handleLogout = async () => {
+        const supabase = createClient();
+        await supabase.auth.signOut();
+        router.push('/login');
+        router.refresh();
+    };
 
     return (
         <aside className={styles.sidebar}>
@@ -45,7 +55,7 @@ export const UserSidebar = () => {
             </nav>
 
             <div className={styles.footer}>
-                <button className={styles.logoutBtn}>
+                <button className={styles.logoutBtn} onClick={handleLogout}>
                     <LogOut size={20} />
                     <span>Cerrar Sesión</span>
                 </button>

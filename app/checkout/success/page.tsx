@@ -87,13 +87,10 @@ function SuccessContent() {
                 </div>
 
                 <div style={{ padding: '1.5rem', background: 'rgb(var(--surface-hover))', borderTop: '1px solid rgb(var(--border))', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {roomUrl && (
-                        <Link href={`/call?roomUrl=${encodeURIComponent(roomUrl)}&userName=Cliente`} target="_blank">
-                            <Button fullWidth size="lg" style={{ gap: '0.5rem' }}>
-                                <Video size={20} /> Unirse ahora a la Llamada
-                            </Button>
-                        </Link>
-                    )}
+
+                    <Button fullWidth onClick={() => router.push('/user/bookings')} style={{ background: 'rgb(var(--secondary))', color: 'white' }}>
+                        Ver mis reservaciones
+                    </Button>
                     <Button variant="outline" fullWidth onClick={() => router.push('/')}>
                         Volver al Inicio
                     </Button>

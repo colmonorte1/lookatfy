@@ -1,39 +1,28 @@
-"use client";
-
-import { CreditCard, Download, ExternalLink, Calendar } from 'lucide-react';
+import { CreditCard, Download, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
+import { createClient } from '@/utils/supabase/server';
+import { redirect } from 'next/navigation';
 
-const PAYMENTS = [
-    {
-        id: 'INV-001',
-        service: 'Asesoría de Estilo Virtual',
-        expert: 'Laura García',
-        date: '12 Ene 2024',
-        amount: 45.00,
-        status: 'paid',
-        method: 'Visa •••• 4242'
-    },
-    {
-        id: 'INV-002',
-        service: 'Personal Shopper (Reserva)',
-        expert: 'Pedro Martinez',
-        date: '10 Ene 2024',
-        amount: 80.00,
-        status: 'paid',
-        method: 'Mastercard •••• 8899'
-    },
-    {
-        id: 'INV-003',
-        service: 'Consulta Técnica',
-        expert: 'Carlos Ruiz',
-        date: '05 Ene 2024',
-        amount: 30.00,
-        status: 'refunded',
-        method: 'PayPal'
-    }
-];
+export default async function UserPaymentsPage() {
+    const supabase = await createClient();
 
-export default function UserPaymentsPage() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return redirect('/login');
+
+    // Fetch bookings as "payments"
+    // We assume any booking is a transaction.
+    const { data: bookings } = await supabase
+        .from('bookings')
+        .select(`
+            *,
+            services ( title ),
+            experts (
+                profiles ( full_name )
+            )
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
     return (
         <div>
             <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>Historial de Pagos</h1>
@@ -42,9 +31,8 @@ export default function UserPaymentsPage() {
                 background: 'rgb(var(--surface))',
                 borderRadius: 'var(--radius-lg)',
                 border: '1px solid rgb(var(--border))',
-                overflow: 'hidden' // For rounded corners on table
+                overflow: 'hidden'
             }}>
-                {/* Desktop Table View */}
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
                         <thead>
@@ -58,51 +46,72 @@ export default function UserPaymentsPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {PAYMENTS.map(payment => (
-                                <tr key={payment.id} style={{ borderBottom: '1px solid rgb(var(--border))', fontSize: '0.95rem' }}>
-                                    <td style={{ padding: '1.25rem 1rem' }}>
-                                        <div style={{ fontWeight: 600, color: 'rgb(var(--text-main))' }}>{payment.service}</div>
-                                        <div style={{ fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>{payment.expert}</div>
-                                    </td>
-                                    <td style={{ padding: '1rem', color: 'rgb(var(--text-secondary))' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <Calendar size={14} /> {payment.date}
-                                        </div>
-                                    </td>
-                                    <td style={{ padding: '1rem' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-                                            <CreditCard size={16} color="rgb(var(--text-muted))" />
-                                            {payment.method}
-                                        </div>
-                                    </td>
-                                    <td style={{ padding: '1rem' }}>
-                                        {payment.status === 'paid' && (
-                                            <span style={{
-                                                background: 'rgba(var(--success), 0.1)', color: 'rgb(var(--success))',
-                                                padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.8rem', fontWeight: 600
-                                            }}>
-                                                Pagado
-                                            </span>
-                                        )}
-                                        {payment.status === 'refunded' && (
-                                            <span style={{
-                                                background: 'rgba(var(--text-secondary), 0.1)', color: 'rgb(var(--text-secondary))',
-                                                padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.8rem', fontWeight: 600
-                                            }}>
-                                                Reembolsado
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td style={{ padding: '1rem', textAlign: 'right', fontWeight: 700 }}>
-                                        ${payment.amount.toFixed(2)}
-                                    </td>
-                                    <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                        <Button variant="ghost" size="sm" style={{ color: 'rgb(var(--primary))' }}>
-                                            <Download size={18} />
-                                        </Button>
+                            {!bookings || bookings.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: 'rgb(var(--text-secondary))' }}>
+                                        No hay transacciones registradas.
                                     </td>
                                 </tr>
-                            ))}
+                            ) : (
+                                bookings.map((booking: any) => {
+                                    // Determine Status Label and Style
+                                    let statusLabel = 'Pendiente';
+                                    let statusStyle = { bg: 'rgba(var(--warning), 0.1)', color: 'rgb(var(--warning))' };
+
+                                    if (booking.status === 'confirmed' || booking.status === 'completed') {
+                                        statusLabel = 'Pagado';
+                                        statusStyle = { bg: 'rgba(var(--success), 0.1)', color: 'rgb(var(--success))' };
+                                    } else if (booking.status === 'cancelled') {
+                                        statusLabel = 'Cancelado/Reembolsado';
+                                        statusStyle = { bg: 'rgba(var(--error), 0.1)', color: 'rgb(var(--error))' };
+                                    }
+
+                                    return (
+                                        <tr key={booking.id} style={{ borderBottom: '1px solid rgb(var(--border))', fontSize: '0.95rem' }}>
+                                            <td style={{ padding: '1.25rem 1rem' }}>
+                                                <div style={{ fontWeight: 600, color: 'rgb(var(--text-main))' }}>{booking.services?.title || 'Servicio'}</div>
+                                                <div style={{ fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>
+                                                    {booking.experts?.profiles?.full_name || 'Experto'}
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '1rem', color: 'rgb(var(--text-secondary))' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    <Calendar size={14} /> {new Date(booking.created_at).toLocaleDateString()}
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '1rem' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
+                                                    <CreditCard size={16} color="rgb(var(--text-muted))" />
+                                                    Tarjeta •••• 4242 {/* Mocked for now */}
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '1rem' }}>
+                                                <span style={{
+                                                    background: statusStyle.bg,
+                                                    color: statusStyle.color,
+                                                    padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.8rem', fontWeight: 600
+                                                }}>
+                                                    {statusLabel}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '1rem', textAlign: 'right', fontWeight: 700 }}>
+                                                {booking.price ? `$${Number(booking.price).toFixed(2)}` : '-'}
+                                            </td>
+                                            <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    style={{ color: 'rgb(var(--primary))' }}
+                                                    disabled={booking.status === 'cancelled'}
+                                                    title="Descargar Factura"
+                                                >
+                                                    <Download size={18} />
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
                         </tbody>
                     </table>
                 </div>

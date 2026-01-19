@@ -6,19 +6,66 @@ import Link from 'next/link';
 import { Mail, Lock, User, Briefcase, ArrowLeft, Tag } from 'lucide-react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 
 export default function ExpertRegisterPage() {
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+    const [title, setTitle] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
-        // Simular registro y redirección
-        setTimeout(() => {
+        setError(null);
+
+        try {
+            const supabase = createClient();
+            const fullName = `${firstName} ${lastName}`.trim();
+
+            // 1. Sign Up
+            const { data, error: signUpError } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        full_name: fullName,
+                        role: 'expert',
+                        title: title // Backup in metadata
+                    }
+                }
+            });
+
+            if (signUpError) throw signUpError;
+
+            // 2. If we have a session (auto-confirm enabled), create Expert record
+            if (data.session) {
+                const { error: expertError } = await supabase
+                    .from('experts')
+                    .insert({
+                        id: data.user?.id,
+                        title: title,
+                        bio: '', // Empty for now
+                        consultation_price: 0
+                    });
+
+                if (expertError) {
+                    console.error('Error creating expert record:', expertError);
+                    // Continue anyway, user can fix in profile
+                }
+            }
+
+            router.push('/expert/profile');
+
+        } catch (err: any) {
+            setError(err.message || 'Error al registrarse');
+        } finally {
             setIsLoading(false);
-            router.push('/expert/profile'); // Redirigir a completar perfil
-        }, 1500);
+        }
     };
 
     return (
@@ -32,6 +79,20 @@ export default function ExpertRegisterPage() {
                 <p style={{ color: 'rgb(var(--text-secondary))' }}>Comparte tu conocimiento y monetiza tu tiempo</p>
             </div>
 
+            {error && (
+                <div style={{
+                    background: 'rgba(var(--error), 0.1)',
+                    color: 'rgb(var(--error))',
+                    padding: '0.75rem',
+                    borderRadius: 'var(--radius-md)',
+                    marginBottom: '1rem',
+                    fontSize: '0.9rem',
+                    textAlign: 'center'
+                }}>
+                    {error}
+                </div>
+            )}
+
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <Input
@@ -39,11 +100,15 @@ export default function ExpertRegisterPage() {
                         placeholder="Tu nombre"
                         icon={<User size={18} />}
                         required
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
                     />
                     <Input
                         label="Apellidos"
                         placeholder="Tus apellidos"
                         required
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
                     />
                 </div>
 
@@ -52,6 +117,8 @@ export default function ExpertRegisterPage() {
                     placeholder="ej. Abogado Penalista, Consultor SEO"
                     icon={<Briefcase size={18} />}
                     required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
                 />
 
                 <Input
@@ -60,6 +127,8 @@ export default function ExpertRegisterPage() {
                     placeholder="ejemplo@correo.com"
                     icon={<Mail size={18} />}
                     required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                 />
 
                 <Input
@@ -68,6 +137,8 @@ export default function ExpertRegisterPage() {
                     placeholder="Crea una contraseña segura"
                     icon={<Lock size={18} />}
                     required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                 />
 
                 <Button

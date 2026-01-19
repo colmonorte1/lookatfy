@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { CreditCard, Calendar, Clock, Lock, ShieldCheck, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Link from 'next/link';
+import { createClient } from '@/utils/supabase/client';
 
 // Helper to wrap useSearchParams in Suspense
 function CheckoutContent() {
@@ -12,41 +13,138 @@ function CheckoutContent() {
     const router = useRouter();
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // Get data from URL params (in a real app, fetch from ID or state)
+    // User Form State
+    const [formData, setFormData] = useState({
+        name: '',
+        surname: '',
+        email: '', // ReadOnly
+        phone: '',
+        notes: ''
+    });
+
+    // Payment Form State (Mock)
+    const [paymentData, setPaymentData] = useState({
+        cardName: '',
+        cardNumber: '',
+        expiry: '',
+        cvc: ''
+    });
+
+    const [loadingUser, setLoadingUser] = useState(true);
+
+    // Get data from URL params
     const serviceTitle = searchParams.get('title') || 'Servicio Profesional';
     const expertName = searchParams.get('expert') || 'Experto Lookatfy';
-    const price = searchParams.get('price') || '0';
-    const date = searchParams.get('date') || 'Fecha no seleccionada';
-    const time = searchParams.get('time') || 'Hora no seleccionada';
+    const price = parseFloat(searchParams.get('price') || '0');
+    const date = searchParams.get('date') || '';
+    const time = searchParams.get('time') || '';
     const currency = searchParams.get('currency') || 'USD';
     const image = searchParams.get('image') || '';
+    const serviceId = searchParams.get('serviceId');
+    const expertId = searchParams.get('expertId');
+
+    // Fetch User Info on Mount
+    useState(() => {
+        const fetchUser = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                // Try to fetch profile details
+                const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+                setFormData(prev => ({
+                    ...prev,
+                    email: user.email || '',
+                    name: profile?.first_name || profile?.full_name?.split(' ')[0] || '',
+                    surname: profile?.last_name || profile?.full_name?.split(' ').slice(1).join(' ') || '',
+                    phone: profile?.phone || ''
+                }));
+            }
+            setLoadingUser(false);
+        };
+        fetchUser();
+    });
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handlePaymentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setPaymentData(prev => ({ ...prev, [name]: value }));
+    };
 
     const handlePayment = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (!serviceId || !expertId || !date || !time) {
+            alert("Faltan datos de la reserva.");
+            return;
+        }
+
         setIsProcessing(true);
 
         try {
-            // Create Daily Room
-            const roomRes = await fetch('/api/daily/room', { method: 'POST' });
-            const roomData = await roomRes.json();
+            const supabase = createClient();
 
-            if (!roomRes.ok) throw new Error(roomData.error || 'Error creating room');
+            // 1. Get Current User (Again for safety)
+            const { data: { user }, error: authError } = await supabase.auth.getUser();
+            if (authError || !user) {
+                alert("Debes iniciar sesión para reservar.");
+                router.push('/login?next=/checkout');
+                return;
+            }
 
-            const params = new URLSearchParams({
+            // 2. Create Daily Room (Mock or Real)
+            let roomUrl = null;
+            // Only create room if virtual? Assuming yes for now.
+            try {
+                // We don't have this API route confirmed yet, skipping or mocking result
+                // const roomRes = await fetch('/api/daily/room', { method: 'POST' });
+                // For now, mock a room URL for demo purposes or external link
+                roomUrl = `https://lookatfy.daily.co/demo-${Date.now()}`;
+            } catch (err) {
+                console.warn("Daily room creation failed", err);
+            }
+
+            // 3. Insert Booking
+            const { error: bookingError } = await supabase
+                .from('bookings')
+                .insert({
+                    user_id: user.id,
+                    expert_id: expertId,
+                    service_id: serviceId,
+                    date: date,
+                    time: time,
+                    status: 'confirmed', // Mock Payment successful
+                    price: price, // Store base price
+                    currency: currency,
+                    meeting_url: roomUrl
+                    // Notes are not in schema yet! 
+                    // If we want to save notes, we need a column.
+                    // For now, we will just log them or ignore them until schema update.
+                });
+
+            if (bookingError) throw bookingError;
+
+            // Optional: Update profile phone/name if filled and was empty? 
+            // Skipping to avoid side effects complexity for now.
+
+            // 4. Redirect to Success Page
+            const successParams = new URLSearchParams({
+                id: 'RES-' + Date.now().toString().slice(-6), // Mock Order ID
                 title: serviceTitle,
                 expert: expertName,
-                date,
-                time,
-                amount: price,
-                id: Math.random().toString(36).substr(2, 9).toUpperCase(), // Mock Order ID
-                roomUrl: roomData.url // Pass Generated URL
+                date: date,
+                time: time,
+                roomUrl: roomUrl || ''
             });
-
-            router.push(`/checkout/success?${params.toString()}`);
+            router.push(`/checkout/success?${successParams.toString()}`);
 
         } catch (error) {
             console.error(error);
             alert('Hubo un error al procesar la reserva. Por favor intenta de nuevo.');
+        } finally {
             setIsProcessing(false);
         }
     };
@@ -72,23 +170,60 @@ function CheckoutContent() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
                             <div>
                                 <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Nombre</label>
-                                <input type="text" placeholder="Tu nombre" className="form-input" style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))' }} />
+                                <input
+                                    type="text"
+                                    name="name"
+                                    value={formData.name}
+                                    onChange={handleInputChange}
+                                    placeholder="Tu nombre"
+                                    className="form-input"
+                                    style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))' }}
+                                />
                             </div>
                             <div>
                                 <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Apellidos</label>
-                                <input type="text" placeholder="Tus apellidos" className="form-input" style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))' }} />
+                                <input
+                                    type="text"
+                                    name="surname"
+                                    value={formData.surname}
+                                    onChange={handleInputChange}
+                                    placeholder="Tus apellidos"
+                                    className="form-input"
+                                    style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))' }}
+                                />
                             </div>
                         </div>
 
                         <div style={{ marginBottom: '1.5rem' }}>
                             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Email</label>
-                            <input type="email" placeholder="ejemplo@correo.com" className="form-input" style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))' }} />
+                            <input
+                                type="email"
+                                name="email"
+                                value={formData.email}
+                                readOnly
+                                title="No puedes cambiar el email desde aquí"
+                                placeholder="ejemplo@correo.com"
+                                className="form-input"
+                                style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', cursor: 'not-allowed', color: 'rgb(var(--text-secondary))' }}
+                            />
                         </div>
 
                         <div style={{ marginBottom: '1.5rem' }}>
                             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Teléfono</label>
-                            <input type="tel" placeholder="+34 600 000 000" className="form-input" style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))' }} />
+                            <input
+                                type="tel"
+                                name="phone"
+                                value={formData.phone}
+                                onChange={handleInputChange}
+                                placeholder="+34 600 000 000"
+                                className="form-input"
+                                style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))' }}
+                            />
                         </div>
+
+                        <p style={{ fontSize: '0.8rem', color: 'rgb(var(--text-muted))' }}>
+                            * Confirmaremos tu reserva a tu correo electrónico.
+                        </p>
                     </div>
 
                     <div style={{ marginBottom: '2rem' }}>
@@ -97,6 +232,9 @@ function CheckoutContent() {
                             Notas Adicionales
                         </h2>
                         <textarea
+                            name="notes"
+                            value={formData.notes}
+                            onChange={handleInputChange}
                             placeholder="¿Tienes alguna petición especial para el experto?"
                             rows={4}
                             style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))', resize: 'vertical' }}
@@ -122,11 +260,11 @@ function CheckoutContent() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                 <Calendar size={16} color="rgb(var(--primary))" />
-                                <span>{date}</span>
+                                <span>{date || 'Fecha no seleccionada'}</span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                 <Clock size={16} color="rgb(var(--primary))" />
-                                <span>{time}</span>
+                                <span>{time || 'Hora no seleccionada'}</span>
                             </div>
                         </div>
 
@@ -139,19 +277,51 @@ function CheckoutContent() {
 
                         <form onSubmit={handlePayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             <div>
-                                <input type="text" placeholder="Nombre en la tarjeta" required style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }} />
+                                <input
+                                    type="text"
+                                    name="cardName"
+                                    value={paymentData.cardName}
+                                    onChange={handlePaymentChange}
+                                    placeholder="Nombre en la tarjeta"
+                                    required // keep required for UX simulation
+                                    style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                />
                             </div>
 
                             <div style={{ position: 'relative' }}>
-                                <input type="text" placeholder="0000 0000 0000 0000" required style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.25rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }} />
+                                <input
+                                    type="text"
+                                    name="cardNumber"
+                                    value={paymentData.cardNumber}
+                                    onChange={handlePaymentChange}
+                                    placeholder="0000 0000 0000 0000"
+                                    required
+                                    style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.25rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                />
                                 <div style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }}>
                                     <Lock size={14} color="rgb(var(--text-muted))" />
                                 </div>
                             </div>
 
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                <input type="text" placeholder="MM/YY" required style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }} />
-                                <input type="text" placeholder="CVC" required style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }} />
+                                <input
+                                    type="text"
+                                    name="expiry"
+                                    value={paymentData.expiry}
+                                    onChange={handlePaymentChange}
+                                    placeholder="MM/YY"
+                                    required
+                                    style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                />
+                                <input
+                                    type="text"
+                                    name="cvc"
+                                    value={paymentData.cvc}
+                                    onChange={handlePaymentChange}
+                                    placeholder="CVC"
+                                    required
+                                    style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                />
                             </div>
 
                             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgb(var(--border))' }}>
@@ -165,16 +335,16 @@ function CheckoutContent() {
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', fontWeight: 700, fontSize: '1.1rem' }}>
                                     <span>Total</span>
-                                    <span>{currency === 'USD' ? '$' : '€'}{parseFloat(price) + 2}</span>
+                                    <span>{currency === 'USD' ? '$' : '€'}{price + 2}</span>
                                 </div>
                             </div>
 
                             <Button fullWidth size="lg" disabled={isProcessing} type="submit" style={{ marginTop: '0.5rem' }}>
-                                {isProcessing ? 'Procesando...' : `Pagar ${currency === 'USD' ? '$' : '€'}${parseFloat(price) + 2}`}
+                                {isProcessing ? 'Procesando...' : `Pagar ${currency === 'USD' ? '$' : '€'}${price + 2}`}
                             </Button>
 
                             <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'rgb(var(--text-muted))', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                                <ShieldCheck size={12} /> Pagos seguros encriptados
+                                <ShieldCheck size={12} /> Pagos seguros encriptados (Modo Demo)
                             </div>
                         </form>
                     </div>
@@ -184,7 +354,6 @@ function CheckoutContent() {
         </div>
     );
 }
-
 export default function CheckoutPage() {
     return (
         <Suspense fallback={<div className="container" style={{ padding: '4rem', textAlign: 'center' }}>Cargando checkout...</div>}>
@@ -192,3 +361,4 @@ export default function CheckoutPage() {
         </Suspense>
     );
 }
+

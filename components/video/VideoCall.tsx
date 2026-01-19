@@ -6,9 +6,12 @@ import { DailyProvider } from '@daily-co/daily-react';
 import CallUI from './CallUI';
 import { AlertCircle } from 'lucide-react';
 
-export default function VideoCall({ roomUrl, userName }: { roomUrl: string; userName: string }) {
+import { useRouter } from 'next/navigation';
+
+export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: string; userName: string; bookingId?: string }) {
     const [callObject, setCallObject] = useState<DailyCall | null>(null);
     const [callError, setCallError] = useState<string | null>(null);
+    const router = useRouter();
 
     useEffect(() => {
         let newCallObject: DailyCall | null = null;
@@ -30,7 +33,11 @@ export default function VideoCall({ roomUrl, userName }: { roomUrl: string; user
                 });
 
                 newCallObject.on('left-meeting', () => {
-                    // Could handle cleanup here
+                    if (bookingId) {
+                        router.push(`/call/feedback/${bookingId}`);
+                    } else {
+                        router.push('/');
+                    }
                 });
 
                 setCallObject(newCallObject);

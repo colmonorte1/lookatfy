@@ -6,19 +6,49 @@ import Link from 'next/link';
 import { Mail, Lock, User, ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 
 export default function ClientRegisterPage() {
+    const [fullName, setFullName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
-        // Simular registro y redirección
-        setTimeout(() => {
-            setIsLoading(false);
+        setError(null);
+
+        try {
+            const supabase = createClient();
+            const { error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        full_name: fullName,
+                        role: 'client'
+                    }
+                }
+            });
+
+            if (error) throw error;
+
+            // Success redirect, or show check email message
+            // Since we might have email confirmation enabled by default in Supabase, 
+            // checking "user" object or session is wise.
+            // For MVP often we turn off confirm email for faster testing or handle the "Check your email" state.
+            // Assuming auto-confirm or ignoring for now:
+
             router.push('/user/profile');
-        }, 1500);
+
+        } catch (err: any) {
+            setError(err.message || 'Error al registrarse');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -32,12 +62,28 @@ export default function ClientRegisterPage() {
                 <p style={{ color: 'rgb(var(--text-secondary))' }}>Entra a un mundo de expertos a tu alcance</p>
             </div>
 
+            {error && (
+                <div style={{
+                    background: 'rgba(var(--error), 0.1)',
+                    color: 'rgb(var(--error))',
+                    padding: '0.75rem',
+                    borderRadius: 'var(--radius-md)',
+                    marginBottom: '1rem',
+                    fontSize: '0.9rem',
+                    textAlign: 'center'
+                }}>
+                    {error}
+                </div>
+            )}
+
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                 <Input
                     label="Nombre Completo"
                     placeholder="Tu nombre y apellidos"
                     icon={<User size={18} />}
                     required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
                 />
 
                 <Input
@@ -46,6 +92,8 @@ export default function ClientRegisterPage() {
                     placeholder="ejemplo@correo.com"
                     icon={<Mail size={18} />}
                     required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                 />
 
                 <Input
@@ -54,6 +102,8 @@ export default function ClientRegisterPage() {
                     placeholder="Crea una contraseña segura"
                     icon={<Lock size={18} />}
                     required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                 />
 
                 <Button

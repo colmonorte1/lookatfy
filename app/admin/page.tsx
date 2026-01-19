@@ -1,4 +1,5 @@
 import { Users, Video, DollarSign, TrendingUp, LayoutDashboard } from 'lucide-react';
+import { createClient } from '@/utils/supabase/server';
 
 const KPICard = ({ title, value, change, icon: Icon, color }: any) => (
     <div style={{
@@ -40,7 +41,16 @@ const KPICard = ({ title, value, change, icon: Icon, color }: any) => (
     </div>
 );
 
-export default function AdminDashboardPage() {
+export default async function AdminDashboardPage() {
+    const supabase = await createClient();
+
+    // Fetch real counts
+    const { count: usersCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+    const { count: expertsCount } = await supabase.from('experts').select('*', { count: 'exact', head: true });
+
+    // We don't have real payments yet, so we mock or use bookings count
+    const { count: bookingsCount } = await supabase.from('bookings').select('*', { count: 'exact', head: true });
+
     return (
         <div>
             <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>Dashboard General</h1>
@@ -53,31 +63,31 @@ export default function AdminDashboardPage() {
             }}>
                 <KPICard
                     title="Usuarios Totales"
-                    value="1,234"
-                    change="+12%"
+                    value={usersCount || 0}
+                    change="+0%"
                     icon={Users}
                     color="primary"
                 />
                 <KPICard
                     title="Expertos Activos"
-                    value="56"
-                    change="+3"
+                    value={expertsCount || 0}
+                    change={expertsCount ? "+100%" : "0%"}
                     icon={Video}
                     color="secondary"
                 />
                 <KPICard
-                    title="Ingresos del Mes"
-                    value="$12,450"
-                    change="+8.2%"
-                    icon={DollarSign}
-                    color="success"
-                />
-                <KPICard
-                    title="Videollamadas Hoy"
-                    value="24"
-                    change="+15%"
+                    title="Reservas Totales"
+                    value={bookingsCount || 0}
+                    change="N/A"
                     icon={LayoutDashboard}
                     color="warning"
+                />
+                <KPICard
+                    title="Ingresos Estimados"
+                    value={`$${(bookingsCount || 0) * 50}`} // Mock avg price
+                    change="N/A"
+                    icon={DollarSign}
+                    color="success"
                 />
             </div>
 
@@ -92,7 +102,7 @@ export default function AdminDashboardPage() {
                 justifyContent: 'center',
                 color: 'rgb(var(--text-muted))'
             }}>
-                Gráfico de Actividad (Placeholder)
+                Gráfico de Actividad (Próximamente con datos reales)
             </div>
         </div>
     );

@@ -1,11 +1,30 @@
-"use client";
-
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button/Button';
-import { USERS_MOCK } from '@/lib/data/users';
 import { Plus, Edit2, Trash2, Eye, Ban } from 'lucide-react';
+import { createClient } from '@/utils/supabase/server';
 
-export default function UsersPage() {
+export default async function UsersPage() {
+    const supabase = await createClient();
+
+    // Fetch profiles
+    const { data: users, error } = await supabase
+        .from('profiles')
+        .select('*')
+    // .order('created_at', { ascending: false }) // profiles table might not have created_at yet per my schema, using raw list
+
+    if (error) {
+        console.error("Error fetching users:", error);
+    }
+
+    // Filter out experts if we want strictly "users" mixed list or just roles that are NOT expert?
+    // The previous mock filtered u.role !== 'expert'. Let's keep that logic if desired,
+    // or arguably admin/users should show EVERYONE. 
+    // Let's stick to the mock's logic: show all except experts (who have their own tab), 
+    // OR show everyone since it's "Users".
+    // The previous code had: USERS_MOCK.filter(u => u.role !== 'expert')
+    // Let's replicate this behavior to keep the separate "Experts" View meaningful.
+    const filteredUsers = (users || []).filter((u: any) => u.role !== 'expert');
+
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -31,15 +50,14 @@ export default function UsersPage() {
                             <th style={{ padding: '1rem', fontWeight: 600, fontSize: '0.875rem' }}>Email</th>
                             <th style={{ padding: '1rem', fontWeight: 600, fontSize: '0.875rem' }}>Rol</th>
                             <th style={{ padding: '1rem', fontWeight: 600, fontSize: '0.875rem' }}>Estado</th>
-                            <th style={{ padding: '1rem', fontWeight: 600, fontSize: '0.875rem' }}>Fecha Registro</th>
                             <th style={{ padding: '1rem', textAlign: 'right' }}>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {USERS_MOCK.filter(u => u.role !== 'expert').map(user => (
+                        {filteredUsers.map((user: any) => (
                             <tr key={user.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
                                 <td style={{ padding: '1rem' }}>
-                                    <div style={{ fontWeight: 500 }}>{user.name}</div>
+                                    <div style={{ fontWeight: 500 }}>{user.full_name || 'Sin Nombre'}</div>
                                 </td>
                                 <td style={{ padding: '1rem', color: 'rgb(var(--text-secondary))' }}>{user.email}</td>
                                 <td style={{ padding: '1rem' }}>
@@ -48,8 +66,8 @@ export default function UsersPage() {
                                         borderRadius: '1rem',
                                         fontSize: '0.75rem',
                                         fontWeight: 600,
-                                        background: user.role === 'admin' ? 'rgba(var(--primary), 0.1)' : user.role === 'expert' ? 'rgba(var(--secondary), 0.1)' : 'rgb(var(--surface-hover))',
-                                        color: user.role === 'admin' ? 'rgb(var(--primary))' : user.role === 'expert' ? 'rgb(var(--secondary))' : 'rgb(var(--text-secondary))',
+                                        background: user.role === 'admin' ? 'rgba(var(--primary), 0.1)' : 'rgb(var(--surface-hover))',
+                                        color: user.role === 'admin' ? 'rgb(var(--primary))' : 'rgb(var(--text-secondary))',
                                         textTransform: 'capitalize'
                                     }}>
                                         {user.role}
@@ -61,14 +79,11 @@ export default function UsersPage() {
                                         alignItems: 'center',
                                         gap: '0.25rem',
                                         fontSize: '0.875rem',
-                                        color: user.status === 'active' ? 'rgb(var(--success))' : 'rgb(var(--text-muted))'
+                                        color: 'rgb(var(--success))' // Assuming active for simple profile existence
                                     }}>
                                         <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }} />
-                                        {user.status === 'active' ? 'Activo' : 'Inactivo'}
+                                        Activo
                                     </span>
-                                </td>
-                                <td style={{ padding: '1rem', color: 'rgb(var(--text-secondary))', fontSize: '0.875rem' }}>
-                                    {user.joinedAt}
                                 </td>
                                 <td style={{ padding: '1rem', textAlign: 'right' }}>
                                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
@@ -81,19 +96,20 @@ export default function UsersPage() {
                                                 <Eye size={16} />
                                             </Button>
                                         </Link>
-                                        <Button variant="ghost" size="sm" title="Editar">
-                                            <Edit2 size={16} />
-                                        </Button>
-                                        <Button variant="ghost" size="sm" style={{ color: 'rgb(var(--warning))' }} title="Suspender">
+                                        <Button variant="ghost" size="sm" style={{ color: 'rgb(var(--warning))' }} title="Suspender (Demo)">
                                             <Ban size={16} />
-                                        </Button>
-                                        <Button variant="ghost" size="sm" style={{ color: 'rgb(var(--error))' }} title="Eliminar">
-                                            <Trash2 size={16} />
                                         </Button>
                                     </div>
                                 </td>
                             </tr>
                         ))}
+                        {filteredUsers.length === 0 && (
+                            <tr>
+                                <td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: 'rgb(var(--text-secondary))' }}>
+                                    No se encontraron usuarios registrados.
+                                </td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>
