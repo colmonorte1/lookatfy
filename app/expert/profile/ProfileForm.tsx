@@ -8,9 +8,28 @@ import Image from 'next/image';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 
+interface Profile {
+    id: string;
+    full_name?: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    avatar_url?: string;
+}
+
+interface Expert {
+    id?: string;
+    title?: string;
+    bio?: string;
+    consultation_price?: number;
+    city?: string;
+    country?: string;
+    phone?: string;
+}
+
 interface ProfileFormProps {
-    user: any;
-    expert: any;
+    user: Profile | null;
+    expert: Expert | null;
 }
 
 export default function ProfileForm({ user, expert }: ProfileFormProps) {
@@ -19,16 +38,28 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
     const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
     const [uploading, setUploading] = useState(false);
 
-    const [formData, setFormData] = useState({
+    interface FormDataState {
+        first_name: string;
+        last_name: string;
+        title: string;
+        bio: string;
+        price: string;
+        city: string;
+        country: string;
+        phone: string;
+        email: string;
+    }
+
+    const [formData, setFormData] = useState<FormDataState>({
         first_name: user?.first_name || '',
         last_name: user?.last_name || '',
         title: expert?.title || '',
         bio: expert?.bio || '',
-        price: expert?.consultation_price || '',
+        price: (expert?.consultation_price ?? '').toString(),
         city: expert?.city || '',
         country: expert?.country || '',
         phone: expert?.phone || '',
-        email: user?.email || '', // Read only
+        email: user?.email || '',
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -79,9 +110,10 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
 
             router.refresh();
 
-        } catch (error: any) {
-            console.error('Error uploading avatar:', error);
-            alert(`Error: ${error.message}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('Error uploading avatar:', message);
+            alert(`Error: ${message}`);
         } finally {
             setUploading(false);
         }
@@ -106,7 +138,7 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
                 })
                 .eq('id', user.id);
 
-            if (profileError) throw profileError;
+            if (profileError) throw profileError as unknown;
 
             // 2. Update Expert Details (UPSERT)
             const { error: expertError } = await supabase
@@ -121,14 +153,15 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
                     phone: formData.phone
                 });
 
-            if (expertError) throw expertError;
+            if (expertError) throw expertError as unknown;
 
             alert('Perfil actualizado correctamente');
             router.refresh();
 
-        } catch (error: any) {
-            console.error('Error updating profile:', error);
-            alert(`Error al actualizar el perfil: ${error.message || error}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('Error updating profile:', message);
+            alert(`Error al actualizar el perfil: ${message}`);
         } finally {
             setIsLoading(false);
         }

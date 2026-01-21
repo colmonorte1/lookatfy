@@ -53,7 +53,14 @@ export default async function UserPaymentsPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                bookings.map((booking: any) => {
+                                bookings.map((booking: {
+                                    id: string;
+                                    status: string;
+                                    created_at: string;
+                                    price?: number | string | null;
+                                    services?: { title?: string };
+                                    experts?: { profiles?: { full_name?: string } };
+                                }) => {
                                     // Determine Status Label and Style
                                     let statusLabel = 'Pendiente';
                                     let statusStyle = { bg: 'rgba(var(--warning), 0.1)', color: 'rgb(var(--warning))' };

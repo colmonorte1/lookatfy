@@ -1,68 +1,123 @@
-import { EXPERTS } from '@/lib/data/experts';
 import { Button } from '@/components/ui/Button/Button';
 import Image from 'next/image';
-import { Star, Clock, MapPin, ShieldCheck, Video, ChevronRight, ArrowRight } from 'lucide-react';
+import { Star, Clock, MapPin, ShieldCheck, ArrowRight } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs/Tabs';
 import Link from 'next/link';
 import { ReviewsList } from '@/components/ui/Reviews/ReviewsList';
+import { createClient } from '@/utils/supabase/server';
 
-export async function generateStaticParams() {
-    return EXPERTS.map((expert) => ({
-        id: expert.id,
-    }));
-}
+type ServiceRow = {
+    id: string;
+    category?: string | null;
+    status?: string | null;
+    title?: string | null;
+    description?: string | null;
+    image_url?: string | null;
+    price?: number | string | null;
+    duration?: number | null;
+};
 
 export default async function ExpertProfilePage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
-    const expert = EXPERTS.find((e) => e.id === id);
+    const supabase = await createClient();
 
-    if (!expert) {
+    const { data: expertRow } = await supabase
+        .from('experts')
+        .select(`
+            *,
+            profile:profiles(full_name, avatar_url, city, country),
+            services:services(*)
+        `)
+        .eq('id', id)
+        .single();
+
+    if (!expertRow) {
         notFound();
     }
 
-    // Mock Services Data tailored for this view
-    const SERVICES = [
-        {
-            id: '1',
-            title: 'Sesión de Consultoría 1:1',
-            price: 50,
-            duration: '60 min',
-            category: 'Consultoría',
-            description: 'Resuelvo tus dudas específicas sobre tu negocio o carrera profesional en una videollamada privada.',
-            image: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&q=80&w=300&h=200'
-        },
-        {
-            id: '2',
-            title: 'Revisión de Portafolio',
-            price: 80,
-            duration: '90 min',
-            category: 'Auditoría',
-            description: 'Análisis detallado de tu trabajo con feedback constructivo y plan de mejora.',
-            image: 'https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&q=80&w=300&h=200'
-        },
-        {
-            id: '3',
-            title: 'Mentoria Mensual (4 Sesiones)',
-            price: 180,
-            duration: '4 x 60 min',
-            category: 'Mentoría',
-            description: 'Acompañamiento continuo para lograr tus objetivos a mediano plazo.',
-            image: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&q=80&w=300&h=200'
-        },
-        {
-            id: '4',
-            title: 'Auditoría Técnica Express',
-            price: 120,
-            duration: '45 min',
-            category: 'Auditoría',
-            description: 'Diagnóstico rápido de tu código o arquitectura de sistemas.',
-            image: 'https://images.unsplash.com/photo-1504384308090-c54be385329d?auto=format&fit=crop&q=80&w=300&h=200'
-        }
-    ];
+    const expertName = expertRow.profile?.full_name || 'Experto';
+    const expertAvatar = expertRow.profile?.avatar_url || 'https://i.pravatar.cc/200?u=expert';
+    const expertTitle = expertRow.title || 'Asesoría';
+    let rating = 5.0;
+    let reviewsCount = 0;
+    try {
+        const { data: ratingsData } = await supabase
+            .from('reviews')
+            .select('rating')
+            .eq('subject_id', id);
+        const nums = (ratingsData || []).map((r: any) => Number(r.rating)).filter((n) => !isNaN(n));
+        reviewsCount = nums.length;
+        rating = nums.length ? Number((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(1)) : 5.0;
+    } catch {}
+    const city = expertRow.profile?.city || '';
+    const country = expertRow.profile?.country || '';
+    const services: ServiceRow[] = Array.isArray(expertRow.services)
+        ? (expertRow.services as ServiceRow[]).filter((s) => s.status !== 'deleted')
+        : [];
+    const categories: string[] = Array.from(
+        new Set(
+            services
+                .map((s) => s.category)
+                .filter((v): v is string => typeof v === 'string')
+        )
+    );
 
-    // Extract unique categories
-    const categories = Array.from(new Set(SERVICES.map(s => s.category)));
+    // Compute per-service rating averages for this expert's services
+    let serviceRatingMap: Record<string, { avg: number; count: number }> = {};
+    if (services.length) {
+        const serviceIds = services.map((s) => s.id);
+        const { data: bookings } = await supabase
+            .from('bookings')
+            .select('id, service_id')
+            .in('service_id', serviceIds);
+        const bookingIds = (bookings || []).map((b: any) => b.id);
+        if (bookingIds.length) {
+            const { data: reviewsRows } = await supabase
+                .from('reviews')
+                .select(`
+                    rating,
+                    booking:bookings!booking_id ( service_id )
+                `)
+                .in('booking_id', bookingIds);
+            const agg: Record<string, number[]> = {};
+            (reviewsRows || []).forEach((r: any) => {
+                const sid = r.booking?.service_id;
+                const val = Number(r.rating);
+                if (sid && !isNaN(val)) {
+                    if (!agg[sid]) agg[sid] = [];
+                    agg[sid].push(val);
+                }
+            });
+            Object.entries(agg).forEach(([sid, arr]) => {
+                const count = arr.length;
+                const avg = count ? arr.reduce((a, b) => a + b, 0) / count : 0;
+                serviceRatingMap[sid] = { avg: Number(avg.toFixed(1)), count };
+            });
+        }
+    }
+
+    const { data: reviewsData } = await supabase
+        .from('reviews')
+        .select(`
+            id,
+            rating,
+            comment,
+            created_at,
+            reviewer:profiles(full_name, avatar_url)
+        `)
+        .eq('subject_id', id)
+        .order('created_at', { ascending: false })
+        .limit(6);
+
+    const reviews = (reviewsData || []).map((r: any) => ({
+        id: r.id,
+        author: r.reviewer?.full_name || 'Usuario',
+        avatar: r.reviewer?.avatar_url || undefined,
+        rating: Number(r.rating) || 5,
+        date: new Date(r.created_at).toLocaleDateString(),
+        comment: r.comment || ''
+    }));
 
     return (
         <main className="container" style={{ padding: '3rem 1rem 6rem' }}>
@@ -80,31 +135,19 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                     {/* Header Section */}
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                            <h1 style={{ fontSize: '2.5rem' }}>{expert.name}</h1>
-                            {expert.isOnline && (
-                                <span style={{
-                                    background: 'rgb(var(--success))',
-                                    color: 'white',
-                                    fontSize: '0.75rem',
-                                    padding: '0.25rem 0.5rem',
-                                    borderRadius: '1rem',
-                                    fontWeight: 600
-                                }}>
-                                    Online
-                                </span>
-                            )}
+                            <h1 style={{ fontSize: '2.5rem' }}>{expertName}</h1>
                         </div>
-                        <p style={{ fontSize: '1.25rem', color: 'rgb(var(--text-secondary))' }}>{expert.title}</p>
+                        <p style={{ fontSize: '1.25rem', color: 'rgb(var(--text-secondary))' }}>{expertTitle}</p>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginTop: '1rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 }}>
                                 <Star size={20} fill="rgb(var(--warning))" stroke="none" />
-                                <span>{expert.rating}</span>
-                                <span style={{ color: 'rgb(var(--text-muted))', fontWeight: 400 }}>({expert.reviews} reseñas)</span>
+                                <span>{rating}</span>
+                                <span style={{ color: 'rgb(var(--text-muted))', fontWeight: 400 }}>({reviewsCount} reseñas)</span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'rgb(var(--text-secondary))' }}>
                                 <MapPin size={18} />
-                                <span>Madrid, España</span>
+                                <span>{[city, country].filter(Boolean).join(', ') || 'Global'}</span>
                             </div>
                         </div>
                     </div>
@@ -115,7 +158,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                     <section>
                         <h2 style={{ marginBottom: '1.5rem', fontSize: '1.5rem' }}>Mis Servicios</h2>
 
-                        <Tabs defaultValue={categories[0]} className="w-full">
+                        <Tabs defaultValue={categories[0] ?? ''} className="w-full">
                             <TabsList>
                                 {categories.map(cat => (
                                     <TabsTrigger key={cat} value={cat}>{cat}</TabsTrigger>
@@ -125,7 +168,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                             {categories.map(cat => (
                                 <TabsContent key={cat} value={cat}>
                                     <div style={{ display: 'grid', gap: '1.5rem', marginTop: '1.5rem' }}>
-                                        {SERVICES.filter(s => s.category === cat).map(service => (
+                                        {services.filter(s => s.category === cat).map(service => (
                                             <div key={service.id} style={{
                                                 display: 'flex',
                                                 gap: '1.5rem',
@@ -138,8 +181,8 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                                             }}>
                                                 <div style={{ width: '120px', height: '80px', borderRadius: '8px', overflow: 'hidden', flexShrink: 0 }}>
                                                     <Image
-                                                        src={service.image}
-                                                        alt={service.title}
+                                                        src={service.image_url || 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&q=80&w=300&h=200'}
+                                                        alt={service.title || ''}
                                                         width={120}
                                                         height={80}
                                                         style={{ objectFit: 'cover', width: '100%', height: '100%' }}
@@ -148,14 +191,19 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                                                 <div style={{ flex: 1 }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                                                         <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>{service.title}</h3>
-                                                        <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'rgb(var(--primary))' }}>${service.price}</div>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                            <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'rgb(var(--primary))' }}>${Number(service.price) || 0}</div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem', fontWeight: 600, color: 'rgb(var(--warning))' }}>
+                                                                <Star size={14} fill="currentColor" stroke="none" /> {serviceRatingMap[service.id]?.avg ?? 5.0} ({serviceRatingMap[service.id]?.count ?? 0})
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                     <p style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem', marginBottom: '1rem', lineHeight: '1.4' }}>
-                                                        {service.description}
+                                                        {service.description || ''}
                                                     </p>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                         <span style={{ fontSize: '0.85rem', color: 'rgb(var(--text-muted))', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                            <Clock size={14} /> {service.duration}
+                                                            <Clock size={14} /> {service.duration ? `${service.duration} min` : ''}
                                                         </span>
                                                         <Link href={`/services/${service.id}`}>
                                                             <Button variant="outline" size="sm" style={{ gap: '0.5rem' }}>
@@ -178,7 +226,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                     <section>
                         <h2 style={{ marginBottom: '1rem' }}>Sobre mí</h2>
                         <p style={{ lineHeight: '1.6', color: 'rgb(var(--text-secondary))', fontSize: '1.05rem' }}>
-                            {expert.bio}
+                            {expertRow.bio || ''}
                         </p>
                         <br />
                         <p style={{ lineHeight: '1.6', color: 'rgb(var(--text-secondary))', fontSize: '1.05rem' }}>
@@ -192,7 +240,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                     <section>
                         <h3 style={{ marginBottom: '1rem', fontSize: '1.25rem' }}>Especialidades</h3>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                            {expert.tags.map(tag => (
+                            {categories.map(tag => (
                                 <span key={tag} style={{
                                     background: 'rgb(var(--surface-hover))',
                                     padding: '0.5rem 1rem',
@@ -211,11 +259,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
 
                     {/* Reviews */}
                     <section>
-                        <ReviewsList reviews={[
-                            { id: '101', author: 'Carlos M.', rating: 5, date: 'Hace 2 días', comment: 'Increíble sesión, María me ayudó a aclarar mi estrategia de ventas.', serviceName: 'Consultoría 1:1' },
-                            { id: '102', author: 'Laura G.', rating: 4.5, date: 'Hace 1 semana', comment: 'Muy profesional y directa. Recomendada.', serviceName: 'Revisión de Portafolio' },
-                            { id: '103', author: 'Pedro S.', rating: 5, date: 'Hace 3 semanas', comment: 'La mejor inversión que he hecho este año para mi negocio.', serviceName: 'Auditoría Técnica' }
-                        ]} title="Opiniones de Clientes" />
+                        <ReviewsList reviews={reviews} title="Opiniones de Clientes" />
                     </section>
                 </div>
 
@@ -241,25 +285,25 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                             boxShadow: 'var(--shadow-md)'
                         }}>
                             <Image
-                                src={expert.image}
-                                alt={expert.name}
+                                src={expertAvatar}
+                                alt={expertName}
                                 width={140}
                                 height={140}
                                 style={{ objectFit: 'cover', width: '100%', height: '100%' }}
                             />
                         </div>
 
-                        <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>{expert.name}</h3>
-                        <p style={{ color: 'rgb(var(--text-secondary))', marginBottom: '1.5rem' }}>{expert.title}</p>
+                        <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>{expertName}</h3>
+                        <p style={{ color: 'rgb(var(--text-secondary))', marginBottom: '1.5rem' }}>{expertTitle}</p>
 
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginBottom: '2rem' }}>
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{expert.reviews}</div>
+                                <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{reviewsCount}</div>
                                 <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-muted))' }}>Reseñas</div>
                             </div>
                             <div style={{ width: '1px', height: '30px', background: 'rgb(var(--border))' }}></div>
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{expert.rating}</div>
+                                <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{rating}</div>
                                 <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-muted))' }}>Rating</div>
                             </div>
                         </div>

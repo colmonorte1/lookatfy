@@ -3,6 +3,7 @@
 import { useLocalParticipant, useDaily } from '@daily-co/daily-react';
 import { Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 
 export default function Controls() {
     const localParticipant = useLocalParticipant();
@@ -28,10 +29,25 @@ export default function Controls() {
         callObject.setLocalVideo(!videoOn);
     };
 
-    const leaveCall = () => {
+    const leaveCall = async () => {
         if (!callObject) return;
-        callObject.leave();
-        router.push('/expert/bookings'); // Return to bookings
+        try { await callObject.leave(); } catch {}
+        try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            let path = '/user/bookings';
+            if (user) {
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('role')
+                    .eq('id', user.id)
+                    .single();
+                if (profile?.role === 'expert') path = '/expert/bookings';
+            }
+            router.push(path);
+        } catch {
+            router.push('/user/bookings');
+        }
     };
 
     return (

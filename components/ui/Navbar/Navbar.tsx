@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useState } from 'react';
 import { Button } from '../Button/Button';
 import styles from './Navbar.module.css';
@@ -31,7 +32,7 @@ export const Navbar = ({ user }: NavbarProps) => {
     const getDashboardLink = () => {
         switch (user?.role) {
             case 'admin': return '/admin';
-            case 'expert': return '/expert/bookings';
+            case 'expert': return '/expert';
             default: return '/user/bookings';
         }
     };
@@ -68,7 +69,7 @@ export const Navbar = ({ user }: NavbarProps) => {
                                 }}
                             >
                                 {user.avatar_url ? (
-                                    <img src={user.avatar_url} alt="Avatar" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} />
+                                    <Image src={user.avatar_url} alt="Avatar" width={24} height={24} style={{ borderRadius: '50%', objectFit: 'cover' }} />
                                 ) : (
                                     <User size={20} />
                                 )}

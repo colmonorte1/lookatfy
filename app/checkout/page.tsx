@@ -95,14 +95,16 @@ function CheckoutContent() {
                 return;
             }
 
-            // 2. Create Daily Room (Mock or Real)
-            let roomUrl = null;
-            // Only create room if virtual? Assuming yes for now.
+            // 2. Create Daily Room (Real via API)
+            let roomUrl: string | null = null;
             try {
-                // We don't have this API route confirmed yet, skipping or mocking result
-                // const roomRes = await fetch('/api/daily/room', { method: 'POST' });
-                // For now, mock a room URL for demo purposes or external link
-                roomUrl = `https://lookatfy.daily.co/demo-${Date.now()}`;
+                const roomRes = await fetch('/api/daily/room', { method: 'POST' });
+                if (roomRes.ok) {
+                    const data = await roomRes.json();
+                    roomUrl = data.url || null;
+                } else {
+                    console.warn('Daily room API responded non-OK');
+                }
             } catch (err) {
                 console.warn("Daily room creation failed", err);
             }
@@ -131,10 +133,22 @@ function CheckoutContent() {
             // Skipping to avoid side effects complexity for now.
 
             // 4. Redirect to Success Page
+            let expertLabel = expertName;
+            try {
+                const { data: expertRow } = await supabase
+                    .from('experts')
+                    .select('profile:profiles(full_name)')
+                    .eq('id', expertId)
+                    .single();
+                if (expertRow?.profile?.full_name) {
+                    expertLabel = expertRow.profile.full_name as string;
+                }
+            } catch {}
+
             const successParams = new URLSearchParams({
-                id: 'RES-' + Date.now().toString().slice(-6), // Mock Order ID
+                id: 'RES-' + Date.now().toString().slice(-6),
                 title: serviceTitle,
-                expert: expertName,
+                expert: expertLabel,
                 date: date,
                 time: time,
                 roomUrl: roomUrl || ''

@@ -1,4 +1,5 @@
 import { Star } from 'lucide-react';
+import Image from 'next/image';
 import styles from './ReviewsList.module.css';
 
 interface Review {
@@ -28,7 +29,7 @@ export const ReviewsList = ({ reviews, title = "Reseñas" }: ReviewsListProps) =
                             <div className={styles.authorInfo}>
                                 <div className={styles.avatar}>
                                     {review.avatar ? (
-                                        <img src={review.avatar} alt={review.author} />
+                                        <Image src={review.avatar} alt={review.author} width={40} height={40} style={{ objectFit: 'cover', borderRadius: '50%' }} />
                                     ) : (
                                         <div className={styles.initial}>{review.author.charAt(0)}</div>
                                     )}
@@ -48,7 +49,7 @@ export const ReviewsList = ({ reviews, title = "Reseñas" }: ReviewsListProps) =
                                 Servicio: {review.serviceName}
                             </div>
                         )}
-                        <p className={styles.comment}>"{review.comment}"</p>
+                        <p className={styles.comment}>&ldquo;{review.comment}&rdquo;</p>
                     </div>
                 ))}
             </div>

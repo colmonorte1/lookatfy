@@ -11,30 +11,36 @@ export function FeedbackForm({ bookingId, subjectId, redirectPath }: { bookingId
     const [comment, setComment] = useState('');
     const [hoverRating, setHoverRating] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [success, setSuccess] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const router = useRouter();
 
     const handleSubmit = async () => {
         if (rating === 0) {
-            alert('Por favor selecciona una calificación de estrellas.');
+            setError('Por favor selecciona una calificación de estrellas.');
             return;
         }
 
         setLoading(true);
+        setError(null);
         const formData = new FormData();
         formData.append('bookingId', bookingId);
         formData.append('subjectId', subjectId);
         formData.append('rating', rating.toString());
         formData.append('comment', comment);
 
+        formData.append('redirectPath', redirectPath);
         const res = await submitReview(null, formData);
 
         if (res?.error) {
-            alert(res.error);
+            setError(res.error);
             setLoading(false);
         } else {
-            // Success
-            router.push(redirectPath);
-            router.refresh();
+            setSuccess(true);
+            setTimeout(() => {
+                router.replace(redirectPath);
+                router.refresh();
+            }, 1500);
         }
     };
 
@@ -75,7 +81,37 @@ export function FeedbackForm({ bookingId, subjectId, redirectPath }: { bookingId
                 />
             </div>
 
-            <Button fullWidth size="lg" onClick={handleSubmit} disabled={loading}>
+            {error && (
+                <div role="alert" aria-live="polite" style={{
+                    background: 'rgba(var(--danger), 0.08)',
+                    color: 'rgb(var(--danger))',
+                    border: '1px solid rgba(var(--danger), 0.25)',
+                    padding: '0.75rem',
+                    borderRadius: 'var(--radius)',
+                    marginBottom: '1rem',
+                    textAlign: 'center',
+                    fontWeight: 600
+                }}>
+                    {error}
+                </div>
+            )}
+
+            {success && (
+                <div aria-live="polite" style={{
+                    background: 'rgba(var(--success), 0.1)',
+                    color: 'rgb(var(--success))',
+                    border: '1px solid rgba(var(--success), 0.3)',
+                    padding: '0.75rem',
+                    borderRadius: 'var(--radius)',
+                    marginBottom: '1rem',
+                    textAlign: 'center',
+                    fontWeight: 600
+                }}>
+                    ¡Gracias por tus comentarios!
+                </div>
+            )}
+
+            <Button fullWidth size="lg" onClick={handleSubmit} disabled={loading || success}>
                 {loading ? 'Enviando...' : 'Enviar Calificación'}
             </Button>
 

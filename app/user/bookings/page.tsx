@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/Button/Button';
 import { Calendar, Video, Clock, MapPin, XCircle, RefreshCw, CheckCircle } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
@@ -15,7 +16,8 @@ const getStatusColor = (status: string) => {
     }
 };
 
-export default async function UserBookingsPage() {
+export default async function UserBookingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+    const { tab } = await searchParams;
     const supabase = await createClient();
 
     // Get current user
@@ -32,7 +34,7 @@ export default async function UserBookingsPage() {
         .from('bookings')
         .select(`
             *,
-            service:services!service_id ( title, type ),
+            service:services!service_id ( title, type, duration ),
             expert:experts!expert_id (
                 id,
                 title,
@@ -54,23 +56,35 @@ export default async function UserBookingsPage() {
 
     const bookings = bookingsData || [];
 
+    const scheduled = bookings.filter(b => (b.status === 'confirmed' || b.status === 'pending'));
+    const finalized = bookings.filter(b => b.status === 'completed');
+
     return (
         <div style={{ maxWidth: '1000px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <h1 style={{ fontSize: '2rem', fontWeight: 700 }}>Mis Reservas</h1>
-                <Button variant="outline" size="sm">Descargar Historial</Button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <Link href={`?tab=scheduled`}>
+                        <Button variant={tab === 'finalized' ? 'outline' : 'primary'} size="sm">Programadas</Button>
+                    </Link>
+                    <Link href={`?tab=finalized`}>
+                        <Button variant={tab === 'finalized' ? 'primary' : 'outline'} size="sm">Finalizadas</Button>
+                    </Link>
+                </div>
             </div>
 
-            {bookings.length === 0 ? (
+            {(tab === 'finalized' ? finalized.length === 0 : scheduled.length === 0) ? (
                 <div style={{ textAlign: 'center', padding: '4rem', background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))' }}>
-                    <p style={{ color: 'rgb(var(--text-secondary))', marginBottom: '1rem' }}>No tienes reservas activas.</p>
+                    <p style={{ color: 'rgb(var(--text-secondary))', marginBottom: '1rem' }}>
+                        {tab === 'finalized' ? 'No tienes reservas finalizadas.' : 'No tienes reservas activas.'}
+                    </p>
                     <Link href="/">
                         <Button>Explorar Servicios</Button>
                     </Link>
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    {bookings.map(booking => {
+                    {(tab === 'finalized' ? finalized : scheduled).map(booking => {
                         const statusInfo = getStatusColor(booking.status || 'pending');
                         const StatusIcon = statusInfo.icon;
 
@@ -96,10 +110,12 @@ export default async function UserBookingsPage() {
                             }}>
                                 {/* Left: Info */}
                                 <div style={{ display: 'flex', gap: '1.5rem' }}>
-                                    <img
+                                    <Image
                                         src={expertAvatar}
                                         alt={expertName}
-                                        style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgb(var(--surface-hover))' }}
+                                        width={64}
+                                        height={64}
+                                        style={{ borderRadius: '50%', objectFit: 'cover', border: '2px solid rgb(var(--surface-hover))' }}
                                     />
                                     <div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
@@ -140,6 +156,7 @@ export default async function UserBookingsPage() {
                                         userName={user.email}
                                         date={booking.date}
                                         time={booking.time}
+                                        duration={booking.service?.duration}
                                         dispute={dispute}
                                     />
                                 </div>

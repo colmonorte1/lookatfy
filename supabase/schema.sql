@@ -80,6 +80,9 @@ CREATE POLICY "Users can view own bookings." ON public.bookings FOR SELECT USING
 CREATE POLICY "Users can create bookings." ON public.bookings FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Experts can update bookings." ON public.bookings FOR UPDATE USING (auth.uid() = expert_id);
 CREATE POLICY "Users can update own bookings" ON public.bookings FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Admins can view all bookings." ON public.bookings FOR SELECT USING (
+  (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin'
+);
 
 -- TRIGGER to auto-create profile on signup
 -- (This function must be created in Supabase SQL Editor manually or via migration)
@@ -257,10 +260,20 @@ CREATE TABLE public.disputes (
     status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'under_review', 'resolved_refunded', 'resolved_dismissed')),
     admin_notes TEXT, -- Private notes for admin
     resolution_notes TEXT, -- Message sent to user upon resolution
+    user_attachments TEXT[], -- Evidence uploaded by user
+    expert_attachments TEXT[], -- Evidence uploaded by expert
+    expert_response TEXT, -- Written response by expert within 24h
+    user_response TEXT, -- Written response by user within 24h
+    resolved_by UUID REFERENCES public.profiles(id), -- Admin who resolved
+    resolved_at TIMESTAMP WITH TIME ZONE, -- When it was resolved
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
     UNIQUE(booking_id) -- Only one dispute per booking
 );
+
+-- Ensure new response columns exist in existing databases
+ALTER TABLE public.disputes ADD COLUMN IF NOT EXISTS expert_response TEXT;
+ALTER TABLE public.disputes ADD COLUMN IF NOT EXISTS user_response TEXT;
 
 -- RLS for Disputes
 ALTER TABLE public.disputes ENABLE ROW LEVEL SECURITY;
@@ -288,3 +301,30 @@ CREATE POLICY "Admins can update disputes" ON public.disputes
     FOR UPDATE USING (
         (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin'
     );
+
+-- Allow participants to update attachments within 24 hours of creation
+CREATE POLICY "Participants can update attachments within 24h" ON public.disputes
+    FOR UPDATE USING (
+        (
+            EXISTS (
+                SELECT 1 FROM public.bookings 
+                WHERE bookings.id = disputes.booking_id 
+                AND (bookings.user_id = auth.uid() OR bookings.expert_id = auth.uid())
+            )
+        )
+        AND (now() <= disputes.created_at + interval '24 hours')
+    );
+
+-- Storage bucket for disputes evidence
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('disputes-evidence', 'disputes-evidence', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Storage policies: authenticated users can upload under their own folder
+CREATE POLICY "Auth can insert disputes evidence"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'disputes-evidence' AND name LIKE (auth.uid()::text || '/%'));
+
+CREATE POLICY "Auth can update own disputes evidence"
+  ON storage.objects FOR UPDATE TO authenticated
+  USING (bucket_id = 'disputes-evidence' AND name LIKE (auth.uid()::text || '/%'));

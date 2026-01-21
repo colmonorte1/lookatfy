@@ -1,4 +1,4 @@
-import { DollarSign, TrendingUp, Calendar, CreditCard, ChevronDown } from 'lucide-react';
+import { DollarSign, TrendingUp, Calendar } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
 
 export default async function ExpertEarningsPage() {
@@ -158,7 +158,7 @@ export default async function ExpertEarningsPage() {
 
                     {/* Rows */}
                     {allBookings.length > 0 ? (
-                        allBookings.map((tx: any) => {
+                        allBookings.map((tx: { id: string; date: string; status: string; price: number | string; services?: { title?: string }; profiles?: { full_name?: string } }) => {
                             const clientName = tx.profiles?.full_name || 'Cliente';
                             const serviceName = tx.services?.title || 'Servicio';
                             const dateStr = new Date(tx.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });

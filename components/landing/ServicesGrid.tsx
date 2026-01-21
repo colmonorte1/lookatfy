@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, MapPin, Tag, Star } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Link from 'next/link';
@@ -13,6 +14,9 @@ interface Service {
     currency: string; // We might need to default this if not in DB yet, schema said EUR default.
     category: string;
     image_url?: string;
+    country?: string;
+    rating_avg?: number;
+    reviews_count_service?: number;
     expert: {
         id: string;
         title: string;
@@ -29,27 +33,38 @@ interface Service {
 
 interface ServicesGridProps {
     services: Service[];
+    categories?: string[];
+    countries?: string[];
 }
 
-const CATEGORIES = ['Todas', 'Moda', 'Tecnología', 'Salud', 'Legal', 'Turismo', 'Otros'];
-const COUNTRIES = ['Todos', 'España', 'México', 'Colombia', 'Argentina', 'USA']; // We might want to fetch distinct countries dynamically later
+export default function ServicesGrid({ services, categories = [], countries = [] }: ServicesGridProps) {
+    const sp = useSearchParams();
+    const initialSearch = sp.get('q') ?? '';
+    const initialCategory = (() => {
+        const c = sp.get('category');
+        return c && categories.includes(c) ? c : 'Todas';
+    })();
+    const initialCountry = (() => {
+        const c = sp.get('country');
+        return c && countries.includes(c) ? c : 'Todos';
+    })();
+    const [searchTerm, setSearchTerm] = useState(() => initialSearch);
+    const [categoryFilter, setCategoryFilter] = useState(() => initialCategory);
+    const [countryFilter, setCountryFilter] = useState(() => initialCountry);
+    const router = useRouter();
 
-export default function ServicesGrid({ services }: ServicesGridProps) {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState('Todas');
-    const [countryFilter, setCountryFilter] = useState('Todos');
+    const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
     const filteredServices = services.filter(service => {
         const expertName = service.expert?.profile?.full_name || '';
         const serviceCategory = service.category || 'Otros';
-        const serviceCountry = service.expert?.country || 'Desconocido';
+        const serviceCountry = service.country || service.expert?.country || 'Desconocido';
 
-        const matchesTerm = service.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            expertName.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesTerm = normalize(service.title).includes(normalize(searchTerm)) ||
+            normalize(expertName).includes(normalize(searchTerm));
 
-        const matchesCategory = categoryFilter === 'Todas' || serviceCategory === categoryFilter;
-        // Simple country matching (exact match for now, could be improved)
-        const matchesCountry = countryFilter === 'Todos' || (serviceCountry && serviceCountry.includes(countryFilter));
+        const matchesCategory = categoryFilter === 'Todas' || normalize(serviceCategory) === normalize(categoryFilter);
+        const matchesCountry = countryFilter === 'Todos' || (serviceCountry && normalize(serviceCountry).includes(normalize(countryFilter)));
 
         return matchesTerm && matchesCategory && matchesCountry;
     });
@@ -129,7 +144,7 @@ export default function ServicesGrid({ services }: ServicesGridProps) {
                                     cursor: 'pointer'
                                 }}
                             >
-                                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                {['Todas', ...categories].map(cat => <option key={cat} value={cat}>{cat}</option>)}
                             </select>
 
                             <select
@@ -146,10 +161,17 @@ export default function ServicesGrid({ services }: ServicesGridProps) {
                                     cursor: 'pointer'
                                 }}
                             >
-                                {COUNTRIES.map(country => <option key={country} value={country}>{country}</option>)}
+                                {['Todos', ...countries].map(country => <option key={country} value={country}>{country}</option>)}
                             </select>
 
-                            <Button onClick={() => window.scrollTo({ top: 600, behavior: 'smooth' })}>
+                            <Button onClick={() => {
+                                const params = new URLSearchParams();
+                                if (searchTerm.trim()) params.set('q', searchTerm.trim());
+                                if (categoryFilter && categoryFilter !== 'Todas') params.set('category', categoryFilter);
+                                if (countryFilter && countryFilter !== 'Todos') params.set('country', countryFilter);
+                                const qs = params.toString();
+                                router.push(qs ? `/services/search?${qs}` : '/services/search');
+                            }}>
                                 Buscar
                             </Button>
                         </div>
@@ -178,11 +200,13 @@ export default function ServicesGrid({ services }: ServicesGridProps) {
                             {filteredServices.map(service => {
                                 const expertName = service.expert?.profile?.full_name || 'Experto';
                                 const expertAvatar = service.expert?.profile?.avatar_url || 'https://i.pravatar.cc/150?u=expert';
-                                const expertRating = service.expert?.rating || 5.0;
-                                const expertReviews = service.expert?.reviews_count || 0;
-                                const country = service.expert?.country || 'Global';
-                                // Default currency € for now as per previous mock
-                                const currencySymbol = '€';
+                                const serviceRating = service.rating_avg ?? 5.0;
+                                const serviceReviews = service.reviews_count_service ?? 0;
+                                const country = service.country || service.expert?.country || 'Global';
+                                const priceLabel = new Intl.NumberFormat('es-ES', {
+                                    style: 'currency',
+                                    currency: service.currency || 'USD'
+                                }).format(Number(service.price) || 0);
 
                                 return (
                                     <Link href={`/services/${service.id}`} key={service.id} style={{ textDecoration: 'none', color: 'inherit' }}>
@@ -209,10 +233,11 @@ export default function ServicesGrid({ services }: ServicesGridProps) {
                                             {/* Image */}
                                             <div style={{ height: '200px', width: '100%', position: 'relative', overflow: 'hidden', background: '#f0f0f0' }}>
                                                 {service.image_url ? (
-                                                    <img
+                                                    <Image
                                                         src={service.image_url}
                                                         alt={service.title}
-                                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                        fill
+                                                        style={{ objectFit: 'cover' }}
                                                     />
                                                 ) : (
                                                     <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}>
@@ -244,7 +269,7 @@ export default function ServicesGrid({ services }: ServicesGridProps) {
                                                         <MapPin size={14} /> {country}
                                                     </div>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem', fontWeight: 600, color: 'rgb(var(--warning))' }}>
-                                                        <Star size={14} fill="currentColor" /> {expertRating} ({expertReviews})
+                                                        <Star size={14} fill="currentColor" /> {serviceRating} ({serviceReviews})
                                                     </div>
                                                 </div>
 
@@ -253,17 +278,19 @@ export default function ServicesGrid({ services }: ServicesGridProps) {
                                                 </h3>
 
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                                                    <img
+                                                    <Image
                                                         src={expertAvatar}
                                                         alt={expertName}
-                                                        style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }}
+                                                        width={32}
+                                                        height={32}
+                                                        style={{ borderRadius: '50%', objectFit: 'cover' }}
                                                     />
                                                     <span style={{ fontSize: '0.9rem', color: 'rgb(var(--text-secondary))' }}>Por {expertName}</span>
                                                 </div>
 
                                                 <div style={{ borderTop: '1px solid rgb(var(--border))', paddingTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                     <span style={{ fontSize: '1.25rem', fontWeight: 700 }}>
-                                                        {currencySymbol}{service.price}
+                                                        {priceLabel}
                                                     </span>
                                                     <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>/ sesión</span>
                                                 </div>

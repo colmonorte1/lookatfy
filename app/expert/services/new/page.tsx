@@ -2,10 +2,10 @@
 
 import { Button } from '@/components/ui/Button/Button';
 import { Input } from '@/components/ui/Input/Input';
-import { ArrowLeft, Save, Plus, X, Check, XCircle, Upload, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Save, Plus, X, Check, XCircle, Image as ImageIcon } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 
@@ -23,7 +23,7 @@ function ChecklistSection({
     items: string[];
     onAdd: (item: string) => void;
     onRemove: (index: number) => void;
-    icon: any;
+    icon: ComponentType<{ size?: number }>;
 }) {
     const [inputValue, setInputValue] = useState('');
 
@@ -100,9 +100,22 @@ export default function NewServicePage() {
     const [title, setTitle] = useState('');
     const [duration, setDuration] = useState('');
     const [price, setPrice] = useState('');
-    const [location, setLocation] = useState('');
+    const [country, setCountry] = useState('');
     const [description, setDescription] = useState('');
     const [type, setType] = useState('Virtual');
+    const [category, setCategory] = useState('');
+    const [categoryOptions, setCategoryOptions] = useState<string[]>(['General']);
+    const [currency, setCurrency] = useState('USD');
+    const [currencyOptions, setCurrencyOptions] = useState<string[]>(['USD', 'EUR', 'MXN']);
+    const [serviceTypeOptions, setServiceTypeOptions] = useState<string[]>([]);
+    const normalizeServiceType = (val: string): 'Virtual' | 'Presencial' | null => {
+        const t = val.toLowerCase().trim();
+        if (t.startsWith('virt') || t.includes('video')) return 'Virtual';
+        if (t.startsWith('prese') || t.includes('acompa') || t.includes('in person')) return 'Presencial';
+        if (t === 'virtual') return 'Virtual';
+        if (t === 'presencial') return 'Presencial';
+        return null;
+    };
 
     // Image State
     const [imageFile, setImageFile] = useState<File | null>(null);
@@ -110,12 +123,16 @@ export default function NewServicePage() {
 
     const [includes, setIncludes] = useState<string[]>([]);
     const [notIncludes, setNotIncludes] = useState<string[]>([]);
+    const [requirementsList, setRequirementsList] = useState<string[]>([]);
+    const [benefitsList, setBenefitsList] = useState<string[]>([]);
+    const [priceError, setPriceError] = useState('');
+    const [durationError, setDurationError] = useState('');
+    const [currencyMeta, setCurrencyMeta] = useState<Record<string, number>>({});
+    const [countryOptions, setCountryOptions] = useState<string[]>([]);
 
     const addInclude = (item: string) => setIncludes([...includes, item]);
     const removeInclude = (idx: number) => setIncludes(includes.filter((_, i) => i !== idx));
 
-    const addNotInclude = (item: string) => setNotIncludes([...notIncludes, item]);
-    const removeNotInclude = (idx: number) => setNotIncludes(notIncludes.filter((_, i) => i !== idx));
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -125,9 +142,130 @@ export default function NewServicePage() {
         }
     };
 
+    // Fetch categories from master table (fallback to distinct from services)
+    useEffect(() => {
+        (async () => {
+            try {
+                const supabase = createClient();
+                const { data: catData } = await supabase
+                    .from('service_categories')
+                    .select('name')
+                    .order('name');
+                type CatRow = { name: string | null };
+                const names = Array.from(new Set(((catData || []) as CatRow[]).map((d) => d.name).filter((c): c is string => !!c)));
+                if (names.length) {
+                    setCategoryOptions(names);
+                    return;
+                }
+            } catch {}
+
+            try {
+                const supabase = createClient();
+                const { data } = await supabase
+                    .from('services')
+                    .select('category')
+                    .not('category', 'is', null);
+                type CategoryRow = { category: string | null };
+                const cats = Array.from(new Set(((data || []) as CategoryRow[]).map((d) => d.category).filter((c): c is string => !!c)));
+                setCategoryOptions(cats.length ? cats : ['General', 'Moda', 'Tecnología', 'Salud', 'Legal', 'Turismo', 'Otros']);
+            } catch {
+                setCategoryOptions(['General', 'Moda', 'Tecnología', 'Salud', 'Legal', 'Turismo', 'Otros']);
+            }
+        })();
+    }, []);
+
+    // Fetch platform currency and active currencies
+    useEffect(() => {
+        (async () => {
+            try {
+                const supabase = createClient();
+                const [{ data: settings }, { data: currs }] = await Promise.all([
+                    supabase.from('platform_settings').select('currency').single(),
+                    supabase.from('active_currencies').select('code, decimals').order('name')
+                ]);
+                type Row = { code: string | null; decimals?: number | null };
+                const codes = Array.from(new Set(((currs || []) as Row[]).map((c) => c.code).filter((c): c is string => !!c)));
+                if (codes.length) setCurrencyOptions(codes);
+                if (settings?.currency) setCurrency(settings.currency);
+                const map: Record<string, number> = {};
+                ((currs || []) as Row[]).forEach(r => {
+                    if (r.code) map[r.code] = typeof r.decimals === 'number' ? r.decimals : 2;
+                });
+                setCurrencyMeta(map);
+            } catch {
+                setCurrencyOptions(['USD', 'EUR', 'MXN']);
+            }
+        })();
+    }, []);
+
+    // Fetch active countries for dropdown
+    useEffect(() => {
+        (async () => {
+            try {
+                const supabase = createClient();
+                const { data } = await supabase.from('active_countries').select('name').order('name');
+                type CRow = { name: string | null };
+                const names = Array.from(new Set(((data || []) as CRow[]).map((c) => c.name).filter((n): n is string => !!n)));
+                setCountryOptions(names);
+            } catch {
+                setCountryOptions(['España', 'México', 'Colombia', 'Argentina', 'USA']);
+            }
+        })();
+    }, []);
+
+    // Fetch service types for "Tipo de Servicio" (normalized to allowed enum)
+    useEffect(() => {
+        (async () => {
+            try {
+                const supabase = createClient();
+                const { data } = await supabase.from('service_types').select('name').order('name');
+                type TRow = { name: string | null };
+                const rawNames = Array.from(new Set(((data || []) as TRow[]).map((t) => t.name).filter((n): n is string => !!n)));
+                const options = rawNames.length ? rawNames : ['Virtual', 'Presencial'];
+                setServiceTypeOptions(options);
+                if (options.length) setType(prev => prev || options[0]);
+            } catch {
+                setServiceTypeOptions(['Virtual', 'Presencial']);
+            }
+        })();
+    }, []);
+
+    // Real-time validation for price and duration
+    useEffect(() => {
+        const p = parseFloat(price);
+        const d = parseInt(duration);
+        setPriceError(isNaN(p) || p < 5 ? 'Precio mínimo 5' : '');
+        setDurationError(isNaN(d) || d < 15 ? 'Duración mínima 15 minutos' : '');
+    }, [price, duration]);
+
+    const getCurrencyDecimals = (code: string) => {
+        if (currencyMeta[code] !== undefined) return currencyMeta[code];
+        switch (code) {
+            case 'JPY':
+            case 'CLP':
+                return 0;
+            default:
+                return 2;
+        }
+    };
+    const decimals = getCurrencyDecimals(currency);
+    const step = decimals === 0 ? '1' : `0.${'0'.repeat(decimals - 1)}1`;
+    const handlePriceBlur = () => {
+        const n = Number(price);
+        if (!isNaN(n)) {
+            setPrice(n.toFixed(decimals));
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
+
+        if (priceError || durationError) {
+            alert('Corrige los campos de precio y duración');
+            setIsLoading(false);
+            return;
+        }
 
         try {
             const supabase = createClient();
@@ -162,31 +300,57 @@ export default function NewServicePage() {
                 imageUrl = data.publicUrl;
             }
 
-            // 4. Insert Service
-            const { error: insertError } = await supabase
+            // 4. Validate title length & category
+            if (title.trim().length === 0) throw new Error('El nombre del servicio es requerido');
+            if (title.trim().length > 60) throw new Error('El nombre del servicio no puede exceder 60 caracteres');
+            if (!category) throw new Error('Debes seleccionar una categoría');
+
+            const requirementsText = [
+                benefitsList.length ? `Beneficios: ${benefitsList.join('; ')}` : '',
+                requirementsList.length ? `Requisitos: ${requirementsList.join('; ')}` : ''
+            ].filter(Boolean).join(' | ');
+
+            const typeCanonical = (type === 'Virtual' || type === 'Presencial') ? type : normalizeServiceType(type) || null;
+            if (!typeCanonical) throw new Error('Selecciona un tipo de servicio válido');
+
+            const basePayload = {
+                expert_id: expert.id,
+                title,
+                description,
+                price: parseFloat(price) || 0,
+                duration: parseInt(duration) || 60,
+                category,
+                includes: includes,
+                not_includes: notIncludes,
+                image_url: imageUrl,
+                type: typeCanonical,
+                requirements: requirementsText
+            };
+            const payloadWithRegion = { ...basePayload, country, currency };
+
+            const payloadWithArrays = { ...basePayload, country, currency, benefits: benefitsList, client_requirements: requirementsList };
+            const { error: insertErrArrays } = await supabase
                 .from('services')
-                .insert({
-                    expert_id: expert.id,
-                    title,
-                    description,
-                    price: parseFloat(price) || 0,
-                    duration: parseInt(duration) || 60,
-                    category: 'General',
-                    includes: includes,
-                    not_includes: notIncludes,
-                    image_url: imageUrl, // Add image url
-                    type: type // Add type enum
-                });
+                .insert(payloadWithArrays);
+            if (insertErrArrays) {
+                if (insertErrArrays.code === '42703') {
+                    const { error: insertErrLegacy } = await supabase
+                        .from('services')
+                        .insert(payloadWithRegion);
+                    if (insertErrLegacy) throw insertErrLegacy;
+                } else {
+                    throw insertErrArrays;
+                }
+            }
 
-            if (insertError) throw insertError;
-
-            // 5. Redirect
+            // 7. Redirect
             router.push('/expert/services');
             router.refresh();
 
-        } catch (error: any) {
-            console.error("Error creating service:", error);
-            alert(`Error creating service: ${error.message}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error("Error creating service:", message);
+            alert(`Error creating service: ${message}`);
         } finally {
             setIsLoading(false);
         }
@@ -267,9 +431,54 @@ export default function NewServicePage() {
                         label="Nombre del Servicio"
                         placeholder="Ej: Acompañamiento de Compras"
                         value={title}
-                        onChange={(e) => setTitle(e.target.value)}
+                        onChange={(e) => setTitle(e.target.value.slice(0, 60))}
                         required
                     />
+                    <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-muted))' }}>{title.length}/60</div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                            <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Categoría</label>
+                            <select
+                                value={category}
+                                onChange={(e) => setCategory(e.target.value)}
+                                required
+                                style={{
+                                    padding: '0.75rem', borderRadius: 'var(--radius-md)',
+                                    border: '1px solid rgb(var(--border))', fontFamily: 'inherit',
+                                    background: 'rgb(var(--background))'
+                                }}
+                            >
+                                <option value="">Selecciona una categoría</option>
+                                {categoryOptions.map((c) => (
+                                    <option key={c} value={c}>{c}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                            <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Bloques de sesión</label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                {[15, 30, 60].map((d) => (
+                                    <button
+                                        key={d}
+                                        type="button"
+                                        onClick={() => setDuration(String(d))}
+                                        style={{
+                                            padding: '0.5rem 0.75rem',
+                                            borderRadius: 'var(--radius-md)',
+                                            border: '1px solid rgb(var(--border))',
+                                            background: duration === String(d) ? 'rgba(var(--primary), 0.1)' : 'rgb(var(--surface))',
+                                            color: 'rgb(var(--text-secondary))',
+                                            cursor: 'pointer'
+                                        }}
+                                    >{d} min</button>
+                                ))}
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-muted))' }}>
+                                Son los espacios de tiempo entre una sesión y otra. Elige la duración que usarás para agendar tus citas.
+                            </div>
+                        </div>
+                    </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
@@ -283,35 +492,81 @@ export default function NewServicePage() {
                                     background: 'rgb(var(--background))'
                                 }}
                             >
-                                <option value="Virtual">Virtual (Videollamada)</option>
-                                <option value="Presencial">Presencial (Acompañamiento)</option>
+                                {serviceTypeOptions.length === 0 ? (
+                                    <>
+                                        <option value="Virtual">Virtual (Videollamada)</option>
+                                        <option value="Presencial">Presencial (Acompañamiento)</option>
+                                    </>
+                                ) : (
+                                    serviceTypeOptions.map((t) => (
+                                        <option key={t} value={t}>{t}</option>
+                                    ))
+                                )}
                             </select>
                         </div>
-                        <Input
-                            label="Duración (minutos)"
-                            type="number"
-                            placeholder="Ej: 60"
-                            value={duration}
-                            onChange={(e) => setDuration(e.target.value)}
-                            required
-                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                            <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Duración (minutos)</label>
+                            <Input
+                                type="number"
+                                placeholder="Ej: 60"
+                                value={duration}
+                                onChange={(e) => setDuration(e.target.value)}
+                                required
+                            />
+                            {durationError && (
+                                <div style={{ fontSize: '0.8rem', color: 'rgb(var(--error))' }}>{durationError}</div>
+                            )}
+                        </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                        <Input
-                            label="Precio ($)"
-                            type="number"
-                            placeholder="0.00"
-                            value={price}
-                            onChange={(e) => setPrice(e.target.value)}
-                            required
-                        />
-                        <Input
-                            label="Ciudad / Ubicación (Opcional)"
-                            placeholder="Ej: Madrid, Online"
-                            value={location}
-                            onChange={(e) => setLocation(e.target.value)}
-                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                            <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Precio</label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <select
+                                    value={currency}
+                                    onChange={(e) => setCurrency(e.target.value)}
+                                    style={{
+                                        padding: '0.75rem', borderRadius: 'var(--radius-md)',
+                                        border: '1px solid rgb(var(--border))', fontFamily: 'inherit',
+                                        background: 'rgb(var(--background))', maxWidth: '140px'
+                                    }}
+                                >
+                                    {currencyOptions.map((c) => (
+                                        <option key={c} value={c}>{c}</option>
+                                    ))}
+                                </select>
+                                <Input
+                                    type="number"
+                                    placeholder="0.00"
+                                    value={price}
+                                    onChange={(e) => setPrice(e.target.value)}
+                                    onBlur={handlePriceBlur}
+                                    step={step}
+                                    required
+                                />
+                            </div>
+                            {priceError && (
+                                <div style={{ fontSize: '0.8rem', color: 'rgb(var(--error))' }}>{priceError}</div>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                            <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>País</label>
+                            <select
+                                value={country}
+                                onChange={(e) => setCountry(e.target.value)}
+                                style={{
+                                    padding: '0.75rem', borderRadius: 'var(--radius-md)',
+                                    border: '1px solid rgb(var(--border))', fontFamily: 'inherit',
+                                    background: 'rgb(var(--background))'
+                                }}
+                            >
+                                <option value="">Selecciona un país</option>
+                                {countryOptions.map((c) => (
+                                    <option key={c} value={c}>{c}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
@@ -335,7 +590,7 @@ export default function NewServicePage() {
                     {/* Checklists */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', margin: '1rem 0' }}>
                         <ChecklistSection
-                            title="¿Qué incluye?"
+                            title="Qué incluye"
                             placeholder="Ej: Grabación de la sesión"
                             items={includes}
                             onAdd={addInclude}
@@ -343,11 +598,29 @@ export default function NewServicePage() {
                             icon={Check}
                         />
                         <ChecklistSection
-                            title="¿Qué NO incluye?"
+                            title="Qué NO incluye"
                             placeholder="Ej: Compra de prendas"
                             items={notIncludes}
-                            onAdd={addNotInclude}
-                            onRemove={removeNotInclude}
+                            onAdd={(item) => setNotIncludes([...notIncludes, item])}
+                            onRemove={(idx) => setNotIncludes(notIncludes.filter((_, i) => i !== idx))}
+                            icon={XCircle}
+                        />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', margin: '0 0 1rem 0' }}>
+                        <ChecklistSection
+                            title="Qué obtienes"
+                            placeholder="Ej: Comparación en vivo, Recomendación personalizada"
+                            items={benefitsList}
+                            onAdd={(item) => setBenefitsList([...benefitsList, item])}
+                            onRemove={(idx) => setBenefitsList(benefitsList.filter((_, i) => i !== idx))}
+                            icon={Check}
+                        />
+                        <ChecklistSection
+                            title="Requisitos para el cliente"
+                            placeholder="Ej: Presupuesto aproximado, Tipo de uso"
+                            items={requirementsList}
+                            onAdd={(item) => setRequirementsList([...requirementsList, item])}
+                            onRemove={(idx) => setRequirementsList(requirementsList.filter((_, i) => i !== idx))}
                             icon={XCircle}
                         />
                     </div>

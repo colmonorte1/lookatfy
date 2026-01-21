@@ -19,6 +19,8 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const router = useRouter();
+    const priceLabel = new Intl.NumberFormat('es-ES', { style: 'currency', currency: service.currency || 'USD' }).format(Number(service.price) || 0);
+    const country = service.country || expert.country || 'Global';
 
     const formattedReviews = reviews.map(r => ({
         id: r.id,
@@ -27,6 +29,13 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
         date: new Date(r.created_at).toLocaleDateString(),
         comment: r.comment
     }));
+    const serviceAvg = formattedReviews.length ? Number((formattedReviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / formattedReviews.length).toFixed(1)) : 5.0;
+    const reqText = service.requirements || '';
+    const parts = reqText.split(' | ');
+    const bPart = parts.find((p: string) => p.startsWith('Beneficios:')) || '';
+    const rPart = parts.find((p: string) => p.startsWith('Requisitos:')) || '';
+    const benefitsList = Array.isArray(service.benefits) ? service.benefits : bPart.replace('Beneficios:', '').split(';').map((s: string) => s.trim()).filter(Boolean);
+    const clientReqsList = Array.isArray(service.client_requirements) ? service.client_requirements : rPart.replace('Requisitos:', '').split(';').map((s: string) => s.trim()).filter(Boolean);
     // ... (skip to render part)
     // ...
 
@@ -88,8 +97,9 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                     </div>
                     <h1 style={{ fontSize: '2.5rem', fontWeight: 700, marginBottom: '0.5rem', color: 'white' }}>{service.title}</h1>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '1rem' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Star fill="currentColor" color="rgb(var(--warning))" size={18} /> {expert.rating || '5.0'} ({expert.reviews_count || '0'} reseñas)</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Star fill="currentColor" color="rgb(var(--warning))" size={18} /> {serviceAvg} ({formattedReviews.length} reseñas del servicio)</span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Clock size={18} /> {service.duration} mins</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><MapPin size={18} /> {country}</span>
                     </div>
                 </div>
             </div>
@@ -120,6 +130,9 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                                 {expert.verified && <ShieldCheck size={18} color="rgb(var(--success))" />}
                             </h3>
                             <div style={{ color: 'rgb(var(--primary))', fontWeight: 500, marginBottom: '0.5rem' }}>{expertTitle}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'rgb(var(--text-secondary))', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+                                <Star size={16} fill="rgb(var(--warning))" stroke="none" /> {expert.rating_avg ?? 5.0} ({expert.reviews_total ?? 0})
+                            </div>
                             <p style={{ fontSize: '0.95rem', color: 'rgb(var(--text-secondary))', lineHeight: '1.5' }}>
                                 "{expert.bio || 'Experto verificado en Lookatfy.'}"
                             </p>
@@ -167,9 +180,35 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                         </div>
                     </div>
 
-                    <div style={{ background: 'rgba(var(--primary), 0.05)', padding: '1.5rem', borderRadius: 'var(--radius-lg)' }}>
-                        <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Requisitos previos</h3>
-                        <p style={{ fontSize: '0.9rem', color: 'rgb(var(--text-secondary))' }}>{service.requirements || 'No se requieren requisitos previos especiales.'}</p>
+                    <div style={{ marginBottom: '2rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                            <div>
+                                <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem', color: 'rgb(var(--text-main))' }}>
+                                    Qué obtienes
+                                </h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    {benefitsList && benefitsList.length > 0 ? benefitsList.map((item: string, i: number) => (
+                                        <div key={i} style={{ display: 'flex', alignItems: 'start', gap: '0.75rem', color: 'rgb(var(--text-secondary))', fontSize: '0.95rem' }}>
+                                            <CheckCircle size={18} color="rgb(var(--success))" style={{ marginTop: '0.1rem', flexShrink: 0 }} />
+                                            <span>{item}</span>
+                                        </div>
+                                    )) : <span style={{ color: 'rgb(var(--text-muted))' }}>No especificado</span>}
+                                </div>
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem', color: 'rgb(var(--text-main))' }}>
+                                    Requisitos para el cliente
+                                </h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    {clientReqsList && clientReqsList.length > 0 ? clientReqsList.map((item: string, i: number) => (
+                                        <div key={i} style={{ display: 'flex', alignItems: 'start', gap: '0.75rem', color: 'rgb(var(--text-secondary))', fontSize: '0.95rem' }}>
+                                            <CheckCircle size={18} color="rgb(var(--primary))" style={{ marginTop: '0.1rem', flexShrink: 0 }} />
+                                            <span>{item}</span>
+                                        </div>
+                                    )) : <span style={{ color: 'rgb(var(--text-muted))' }}>No especificado</span>}
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div style={{ width: '100%', height: '1px', background: 'rgb(var(--border))', margin: '2rem 0' }} />
@@ -201,7 +240,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgb(var(--border))' }}>
                             <div>
                                 <span style={{ fontSize: '1.75rem', fontWeight: 700 }}>
-                                    {service.currency === 'USD' ? '$' : '€'}{service.price}
+                                    {priceLabel}
                                 </span>
                                 <span style={{ color: 'rgb(var(--text-secondary))' }}> / sesión</span>
                             </div>

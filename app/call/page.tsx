@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button/Button';
 import { Input } from '@/components/ui/Input/Input';
@@ -16,11 +16,71 @@ function CallContent() {
     const [roomUrl, setRoomUrl] = useState(initialRoomUrl);
     const [userName, setUserName] = useState(initialUserName);
     const [isJoined, setIsJoined] = useState(false);
+    const [isPreparing, setIsPreparing] = useState(false);
 
-    useEffect(() => {
-        if (initialRoomUrl) setRoomUrl(initialRoomUrl);
-        if (initialUserName) setUserName(initialUserName);
-    }, [initialRoomUrl, initialUserName]);
+    const handleJoin = async () => {
+        if (isPreparing) return;
+        setIsPreparing(true);
+        try {
+            let finalUrl = roomUrl;
+            if (!finalUrl && bookingId) {
+                const supabase = (await import('@/utils/supabase/client')).createClient();
+                const { data: booking } = await supabase
+                    .from('bookings')
+                    .select('meeting_url')
+                    .eq('id', bookingId)
+                    .single();
+
+                finalUrl = booking?.meeting_url || '';
+                if (!finalUrl) {
+                    const res = await fetch('/api/daily/room', { method: 'POST' });
+                    if (res.ok) {
+                        const j = await res.json();
+                        finalUrl = j.url || '';
+                        if (finalUrl) {
+                            await supabase
+                                .from('bookings')
+                                .update({ meeting_url: finalUrl })
+                                .eq('id', bookingId);
+                        }
+                    }
+                }
+            }
+
+            if (finalUrl) {
+                try {
+                    const name = (() => {
+                        try {
+                            const u = new URL(finalUrl);
+                            return u.pathname.replace(/^\//, '');
+                        } catch { return ''; }
+                    })();
+
+                    if (name) {
+                        const verify = await fetch(`/api/daily/room?name=${encodeURIComponent(name)}`);
+                        if (!verify.ok) {
+                            const res = await fetch('/api/daily/room', { method: 'POST' });
+                            if (res.ok) {
+                                const j = await res.json();
+                                finalUrl = j.url || finalUrl;
+                                if (bookingId) {
+                                    const supabase = (await import('@/utils/supabase/client')).createClient();
+                                    await supabase
+                                        .from('bookings')
+                                        .update({ meeting_url: finalUrl })
+                                        .eq('id', bookingId);
+                                }
+                            }
+                        }
+                    }
+                } catch {}
+                setRoomUrl(finalUrl);
+                setIsJoined(true);
+            }
+        } finally {
+            setIsPreparing(false);
+        }
+    };
 
     if (isJoined && roomUrl) {
         return (
@@ -65,25 +125,14 @@ function CallContent() {
                         value={userName}
                         onChange={(e) => setUserName(e.target.value)}
                     />
-                    <Input
-                        label="URL de la Sala (Daily.co)"
-                        placeholder="https://tu-dominio.daily.co/sala"
-                        value={roomUrl}
-                        onChange={(e) => setRoomUrl(e.target.value)}
-                    />
-                    {!roomUrl && (
-                        <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-muted))' }}>
-                            * ¿No tienes una sala? Crea una gratis en <a href="https://dashboard.daily.co/rooms" target="_blank" style={{ color: 'rgb(var(--primary))', textDecoration: 'underline' }}>daily.co</a>
-                        </div>
-                    )}
                 </div>
 
                 <Button
-                    onClick={() => setIsJoined(true)}
-                    disabled={!roomUrl}
+                    onClick={handleJoin}
+                    disabled={isPreparing || !userName}
                     style={{ width: '100%' }}
                 >
-                    Unirse a la Llamada
+                    {isPreparing ? 'Preparando sala...' : 'Unirse a la Llamada'}
                 </Button>
             </div>
         </div>

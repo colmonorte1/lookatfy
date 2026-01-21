@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, X, Clock } from 'lucide-react';
 import { Button } from '../Button/Button';
 import styles from './BookingCalendar.module.css';
@@ -23,13 +23,7 @@ export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, servi
     const [availability, setAvailability] = useState<DayAvailability[]>([]);
     const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        if (isOpen && expertId) {
-            fetchAvailability();
-        }
-    }, [currentDate, isOpen, expertId]);
-
-    const fetchAvailability = async () => {
+    const fetchAvailability = useCallback(async () => {
         setLoading(true);
         try {
             const data = await getExpertAvailability(
@@ -44,7 +38,13 @@ export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, servi
         } finally {
             setLoading(false);
         }
-    };
+    }, [expertId, currentDate, serviceDuration]);
+
+    useEffect(() => {
+        if (isOpen && expertId) {
+            fetchAvailability();
+        }
+    }, [currentDate, isOpen, expertId, fetchAvailability]);
 
     if (!isOpen) return null;
 

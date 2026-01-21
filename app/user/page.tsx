@@ -20,11 +20,7 @@ export default async function UserDashboard() {
 
     const userName = profile?.full_name?.split(' ')[0] || 'Usuario';
 
-    // 3. Fetch Next Session (Upcoming & Confirmed)
-    // Filter: status = confirmed AND date >= today
-    const today = new Date().toISOString().split('T')[0];
-
-    const { data: upcomingBookings } = await supabase
+    const { data: upcomingList } = await supabase
         .from('bookings')
         .select(`
             *,
@@ -36,24 +32,45 @@ export default async function UserDashboard() {
         `)
         .eq('user_id', user.id)
         .eq('status', 'confirmed')
-        .gte('date', today)
         .order('date', { ascending: true })
         .order('time', { ascending: true })
-        .limit(1);
+        .limit(10);
 
-    const nextSession = upcomingBookings?.[0];
+    const now = new Date().getTime();
+    const nextSession = (upcomingList || []).find(b => {
+        const ds = String(b?.date || '');
+        const ts = String(b?.time || '00:00');
+        const iso = `${ds}T${ts}`;
+        const t = Number(new Date(iso).getTime());
+        return !Number.isNaN(t) && t >= now;
+    });
 
-    // 4. Fetch Recent History (Completed)
-    const { data: pastBookings } = await supabase
+    const { data: historyList } = await supabase
         .from('bookings')
         .select(`
             *,
             services ( title )
         `)
         .eq('user_id', user.id)
-        .eq('status', 'completed')
+        .in('status', ['confirmed','completed'])
         .order('date', { ascending: false })
-        .limit(3);
+        .order('time', { ascending: false })
+        .limit(20);
+
+    const pastBookings = (historyList || [])
+        .filter(b => {
+            const ds = String(b?.date || '');
+            const ts = String(b?.time || '00:00');
+            const iso = `${ds}T${ts}`;
+            const t = Number(new Date(iso).getTime());
+            return !Number.isNaN(t) && t < now;
+        })
+        .sort((a, b) => {
+            const ta = Number(new Date(`${String(a?.date || '')}T${String(a?.time || '00:00')}`).getTime());
+            const tb = Number(new Date(`${String(b?.date || '')}T${String(b?.time || '00:00')}`).getTime());
+            return tb - ta;
+        })
+        .slice(0, 3);
 
     return (
         <div>
@@ -166,7 +183,7 @@ export default async function UserDashboard() {
                     <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>Historial Reciente</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         {pastBookings && pastBookings.length > 0 ? (
-                            pastBookings.map((booking: any) => (
+                            pastBookings.map((booking: { id: string; date: string; services?: { title?: string } }) => (
                                 <div key={booking.id} style={{
                                     display: 'flex', alignItems: 'center', gap: '1rem',
                                     paddingBottom: '1rem', borderBottom: '1px solid rgb(var(--border))'

@@ -4,6 +4,19 @@ import { Plus } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
 import ServiceCard from '@/components/expert/ServiceCard';
 
+interface Service {
+    id: string;
+    title: string;
+    price: number;
+    duration?: number;
+    location?: string;
+    description?: string;
+    image_url?: string;
+    type?: string;
+    includes?: string[];
+    not_includes?: string[];
+}
+
 export default async function ExpertServicesPage() {
     const supabase = await createClient();
 
@@ -11,7 +24,7 @@ export default async function ExpertServicesPage() {
     const { data: { user } } = await supabase.auth.getUser();
 
     // 2. Fetch Services (excluding deleted)
-    let services: any[] = [];
+    let services: Service[] = [];
 
     if (user) {
         const { data, error } = await supabase
@@ -21,7 +34,7 @@ export default async function ExpertServicesPage() {
             .neq('status', 'deleted') // Filter out soft-deleted items
             .order('created_at', { ascending: false });
 
-        if (data) services = data;
+        if (data) services = data as Service[];
     }
 
     return (
@@ -37,7 +50,7 @@ export default async function ExpertServicesPage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '2rem' }}>
-                {services.map((service: any) => (
+                {services.map((service) => (
                     <ServiceCard key={service.id} service={service} />
                 ))}
 

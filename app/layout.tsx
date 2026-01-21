@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import { Inter, Outfit } from 'next/font/google'
-import { Navbar } from '@/components/ui/Navbar/Navbar'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })

@@ -52,6 +52,11 @@ export async function getMasterData() {
     const { data: countries } = await supabase.from('active_countries').select('*').order('name');
     const { data: currencies } = await supabase.from('active_currencies').select('*').order('name');
     const { data: categories } = await supabase.from('service_categories').select('*').order('name');
+    let serviceTypes: any[] = [];
+    try {
+        const { data } = await supabase.from('service_types').select('*').order('name');
+        serviceTypes = data || [];
+    } catch {}
 
     // Count services per category manually if join not supported or complex
     // Or we can just return categories and handle count in UI or separate query.
@@ -60,7 +65,8 @@ export async function getMasterData() {
     return {
         countries: countries || [],
         currencies: currencies || [],
-        categories: categories || []
+        categories: categories || [],
+        service_types: serviceTypes || []
     };
 }
 
@@ -116,6 +122,36 @@ export async function addCategory(data: { name: string; slug: string; icon?: str
 export async function deleteCategory(id: string) {
     const supabase = await createClient();
     const { error } = await supabase.from('service_categories').delete().eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/settings');
+    return { success: true };
+}
+
+// --- Service Types Actions ---
+export async function addServiceType(data: { name: string; slug?: string }) {
+    const supabase = await createClient();
+    const payload = { name: data.name, slug: data.slug || data.name.toLowerCase().replace(/\s+/g, '-') };
+    const { error } = await supabase.from('service_types').insert(payload);
+    if (error) {
+        if (error.code === '23505') return { error: 'El tipo de servicio ya existe.' };
+        return { error: error.message };
+    }
+    revalidatePath('/admin/settings');
+    return { success: true };
+}
+
+export async function deleteServiceType(id: string) {
+    const supabase = await createClient();
+    const { error } = await supabase.from('service_types').delete().eq('id', id);
+    if (error) return { error: error.message };
+    revalidatePath('/admin/settings');
+    return { success: true };
+}
+
+export async function updateServiceType(id: string, data: { name: string; slug?: string }) {
+    const supabase = await createClient();
+    const payload = { name: data.name, slug: data.slug || data.name.toLowerCase().replace(/\s+/g, '-') };
+    const { error } = await supabase.from('service_types').update(payload).eq('id', id);
     if (error) return { error: error.message };
     revalidatePath('/admin/settings');
     return { success: true };

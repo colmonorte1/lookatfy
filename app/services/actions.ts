@@ -78,7 +78,7 @@ export async function getExpertAvailability(expertId: string, year: number, mont
         }
 
         // Generate Slots from Rule
-        let possibleSlots = generateSlots(rule.start_time, rule.end_time, serviceDuration);
+        const possibleSlots = generateSlots(rule.start_time, rule.end_time, serviceDuration);
 
         // Filter out booked slots
         // booked time matches exactly for now. In real world overlap check needed.

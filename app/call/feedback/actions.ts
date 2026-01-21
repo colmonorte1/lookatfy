@@ -2,9 +2,8 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 
-export async function submitReview(prevState: any, formData: FormData) {
+export async function submitReview(prevState: unknown, formData: FormData) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -15,10 +14,22 @@ export async function submitReview(prevState: any, formData: FormData) {
     const bookingId = formData.get('bookingId') as string;
     const rating = Number(formData.get('rating'));
     const comment = formData.get('comment') as string;
-    const subjectId = formData.get('subjectId') as string; // Who we are rating
+    const subjectId = formData.get('subjectId') as string;
+    const redirectPath = formData.get('redirectPath') as string | null;
 
     if (!bookingId || !rating || !subjectId) {
         return { error: 'Faltan datos requeridos' };
+    }
+
+    const { data: existing } = await supabase
+        .from('reviews')
+        .select('id')
+        .eq('booking_id', bookingId)
+        .eq('reviewer_id', user.id)
+        .limit(1);
+
+    if (existing && existing.length > 0) {
+        return { error: 'Ya calificaste esta sesión.' };
     }
 
     const { error } = await supabase
@@ -33,10 +44,14 @@ export async function submitReview(prevState: any, formData: FormData) {
 
     if (error) {
         console.error('Submit review error:', error);
-        return { error: 'Error al guardar la calificación. Tal vez ya calificaste esta sesión.' };
+        if (error?.code === '23505') {
+            return { error: 'Ya calificaste esta sesión.' };
+        }
+        return { error: 'Error al guardar la calificación.' };
     }
 
-    // TODO: Update Expert Rating Aggregate (Optional for MVP, trigger is better)
-
+    if (redirectPath) {
+        revalidatePath(redirectPath);
+    }
     return { success: true };
 }

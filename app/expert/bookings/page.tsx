@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button/Button';
-import { Calendar, Video, Clock } from 'lucide-react';
+import { Calendar, Clock } from 'lucide-react';
+import ExpertBookingActions from '@/components/expert/ExpertBookingActions';
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 
-export default async function ExpertBookingsPage() {
+export default async function ExpertBookingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+    const { tab } = await searchParams;
     const supabase = await createClient();
 
     // Get current user (Expert)
@@ -26,7 +28,7 @@ export default async function ExpertBookingsPage() {
         .from('bookings')
         .select(`
             *,
-            service:services ( title, type, price ),
+            service:services ( title, type, price, duration ),
             user:profiles ( full_name, email, avatar_url )
         `)
         .eq('expert_id', user.id) // expert_id is same as auth uid for experts
@@ -38,23 +40,32 @@ export default async function ExpertBookingsPage() {
     }
 
     const bookings = bookingsData || [];
+    const scheduled = bookings.filter(b => (b.status === 'confirmed' || b.status === 'pending'));
+    const finalized = bookings.filter(b => b.status === 'completed');
 
     return (
         <div>
             <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>Mis Reservas</h1>
 
-            <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-                <Button variant="primary" size="sm" style={{ borderRadius: '2rem' }}>Todas</Button>
-                {/* Future: Implement filtering */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div></div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <Link href={`?tab=scheduled`}>
+                        <Button variant={tab === 'finalized' ? 'outline' : 'primary'} size="sm">Programadas</Button>
+                    </Link>
+                    <Link href={`?tab=finalized`}>
+                        <Button variant={tab === 'finalized' ? 'primary' : 'outline'} size="sm">Finalizadas</Button>
+                    </Link>
+                </div>
             </div>
 
-            {bookings.length === 0 ? (
+            {(tab === 'finalized' ? finalized.length === 0 : scheduled.length === 0) ? (
                 <div style={{ textAlign: 'center', padding: '3rem', color: 'rgb(var(--text-secondary))' }}>
-                    No tienes reservas aún.
+                    {tab === 'finalized' ? 'No tienes reservas finalizadas.' : 'No tienes reservas aún.'}
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {bookings.map(booking => {
+                    {(tab === 'finalized' ? finalized : scheduled).map(booking => {
                         const customerName = booking.user?.full_name || booking.user?.email || 'Cliente';
                         const serviceTitle = booking.service?.title || 'Servicio';
                         const serviceType = booking.service?.type || 'Virtual';
@@ -104,43 +115,14 @@ export default async function ExpertBookingsPage() {
                                     <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>${price}</div>
 
                                     {(status === 'confirmed' || status === 'pending') && (
-                                        booking.meeting_url ? (
-                                            (() => {
-                                                const getMeetingDateTime = () => {
-                                                    try {
-                                                        return new Date(`${booking.date} ${booking.time}`);
-                                                    } catch (e) { return null; }
-                                                };
-                                                const meetingDate = getMeetingDateTime();
-                                                const now = new Date();
-                                                const isJoinable = meetingDate ? (now.getTime() >= meetingDate.getTime() - 60 * 60 * 1000) : false;
-
-                                                if (isJoinable) {
-                                                    return (
-                                                        <Link href={`/call?roomUrl=${encodeURIComponent(booking.meeting_url)}&userName=${encodeURIComponent(user.email || 'Experto')}&bookingId=${booking.id}`} target="_blank">
-                                                            <Button style={{ gap: '0.5rem' }}>
-                                                                <Video size={18} />
-                                                                Entrar
-                                                            </Button>
-                                                        </Link>
-                                                    );
-                                                } else {
-                                                    return (
-                                                        <div style={{ textAlign: 'center' }}>
-                                                            <Button disabled style={{ gap: '0.5rem', opacity: 0.6 }}>
-                                                                <Video size={18} />
-                                                                Entrar
-                                                            </Button>
-                                                            <div style={{ fontSize: '0.7rem', color: 'rgb(var(--text-secondary))', marginTop: '0.1rem' }}>
-                                                                Habilitado 1h antes
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                }
-                                            })()
-                                        ) : (
-                                            <span style={{ fontSize: '0.9rem', color: 'rgb(var(--text-muted))' }}>Sin Sala</span>
-                                        )
+                                        <ExpertBookingActions
+                                            bookingId={booking.id}
+                                            status={status}
+                                            meetingUrl={booking.meeting_url}
+                                            date={booking.date}
+                                            time={booking.time}
+                                            duration={booking.service?.duration}
+                                        />
                                     )}
 
                                     {status === 'completed' && (

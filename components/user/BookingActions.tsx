@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import { XCircle, Video as VideoIcon } from 'lucide-react';
 import { cancelBooking } from '@/app/user/actions';
 import Link from 'next/link';
+import { createClient } from '@/utils/supabase/client';
 
 interface BookingActionsProps {
     bookingId: string;
@@ -13,23 +14,29 @@ interface BookingActionsProps {
     userName?: string;
     date: string;
     time: string;
+    duration?: number;
     dispute?: { id: string; status: string } | null;
 }
 
-export function BookingActions({ bookingId, status, meetingUrl, userName, date, time, dispute }: BookingActionsProps) {
+export function BookingActions({ bookingId, status, meetingUrl, userName, date, time, duration, dispute }: BookingActionsProps) {
     const [loading, setLoading] = useState(false);
     const [cancelModalOpen, setCancelModalOpen] = useState(false);
     const [cancelReason, setCancelReason] = useState('');
     const [disputeModalOpen, setDisputeModalOpen] = useState(false);
     const [disputeReason, setDisputeReason] = useState('no_show');
     const [disputeDescription, setDisputeDescription] = useState('');
+    const [files, setFiles] = useState<File[]>([]);
+    const [remaining, setRemaining] = useState<number | null>(null);
+    const [hasReview, setHasReview] = useState(false);
+    const [existingDispute, setExistingDispute] = useState(dispute || null);
+    type SimpleDispute = { id: string; status: string };
 
     // DateTime Parsing Logic
     const getMeetingDateTime = () => {
         try {
             const dateTimeStr = `${date} ${time}`;
             return new Date(dateTimeStr);
-        } catch (e) {
+        } catch {
             return null;
         }
     };
@@ -38,6 +45,72 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
     const now = new Date();
     // Enable 1 hour before
     const isJoinable = meetingDate ? (now.getTime() >= meetingDate.getTime() - 60 * 60 * 1000) : false;
+
+    useEffect(() => {
+        const durMin = duration ?? 60;
+        if (!meetingDate) {
+            setRemaining(null);
+            return;
+        }
+        const endTs = meetingDate.getTime() + durMin * 60 * 1000;
+        const tick = () => {
+            const nowMs = Date.now();
+            const remain = Math.max(0, Math.floor((endTs - nowMs) / 1000));
+            setRemaining(remain);
+        };
+        tick();
+        const timer = setInterval(tick, 1000);
+        return () => clearInterval(timer);
+    }, [meetingDate, duration]);
+
+    useEffect(() => {
+        const markCompleted = async () => {
+            if (remaining === 0 && status !== 'completed' && status !== 'cancelled') {
+                try {
+                    const supabase = createClient();
+                    await supabase
+                        .from('bookings')
+                        .update({ status: 'completed' })
+                        .eq('id', bookingId);
+                } catch {}
+            }
+        };
+        markCompleted();
+    }, [remaining, status, bookingId]);
+
+    useEffect(() => {
+        const checkReview = async () => {
+            try {
+                const supabase = createClient();
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+                const { data } = await supabase
+                    .from('reviews')
+                    .select('id')
+                    .eq('booking_id', bookingId)
+                    .eq('reviewer_id', user.id)
+                    .limit(1);
+                if (data && data.length > 0) setHasReview(true);
+            } catch {}
+        };
+        checkReview();
+    }, [bookingId]);
+
+    useEffect(() => {
+        const checkDispute = async () => {
+            try {
+                if (existingDispute) return;
+                const supabase = createClient();
+                const { data } = await supabase
+                    .from('disputes')
+                    .select('id, status')
+                    .eq('booking_id', bookingId)
+                    .limit(1);
+                if (data && data.length > 0) setExistingDispute(data[0] as SimpleDispute);
+            } catch {}
+        };
+        checkDispute();
+    }, [bookingId, existingDispute]);
 
     const handleCancel = async () => {
         if (!cancelReason.trim()) {
@@ -59,11 +132,29 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
         if (!disputeDescription.trim()) return alert('Por favor describe el problema.');
 
         setLoading(true);
+        const supabase = createClient();
+        const attachments: string[] = [];
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && files.length) {
+                const bucket = supabase.storage.from('disputes-evidence');
+                for (const f of files) {
+                    const path = `${user.id}/${bookingId}/${Date.now()}_${f.name}`;
+                    const { getDisputeEvidenceSignedUpload } = await import('@/app/admin/disputes/actions');
+                    const { token, error: signErr } = await getDisputeEvidenceSignedUpload(path);
+                    if (signErr || !token) { alert(signErr || 'No se pudo firmar la subida'); continue; }
+                    const { error: upErr } = await bucket.uploadToSignedUrl(path, token, f);
+                    if (!upErr) attachments.push(path);
+                }
+            }
+        } catch {}
+
         const { createDispute } = await import('@/app/admin/disputes/actions');
         const res = await createDispute({
             booking_id: bookingId,
             reason: disputeReason,
-            description: disputeDescription
+            description: disputeDescription,
+            attachments
         });
         setLoading(false);
         setDisputeModalOpen(false);
@@ -73,6 +164,10 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
     };
 
     if (status === 'completed' || status === 'cancelled') {
+        const elapsedMs = meetingDate ? (Date.now() - meetingDate.getTime()) : 0;
+        const reportWindowMs = 24 * 60 * 60 * 1000;
+        const windowOpen = elapsedMs <= reportWindowMs;
+        const disabledReport = !!existingDispute || !windowOpen;
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
                 <Button variant="outline" fullWidth disabled>
@@ -84,10 +179,16 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                     fullWidth
                     size="sm"
                     style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))', textDecoration: 'underline' }}
-                    onClick={() => setDisputeModalOpen(true)}
-                >
+                    onClick={() => !disabledReport && setDisputeModalOpen(true)}
+                    disabled={disabledReport}
+                    >
                     Reportar un problema
                 </Button>
+                {disabledReport && (
+                    <span style={{ fontSize: '0.75rem', color: 'rgb(var(--text-secondary))' }}>
+                        {existingDispute ? 'Ya existe una disputa para esta reserva.' : 'La ventana de reporte vence a las 24h.'}
+                    </span>
+                )}
 
                 {/* Dispute Modal */}
                 {disputeModalOpen && (
@@ -136,6 +237,15 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                                 }}
                             />
 
+                            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: 600 }}>Evidencia (imágenes/pdf)</label>
+                            <input
+                                type="file"
+                                multiple
+                                accept="image/*,.pdf"
+                                onChange={(e) => setFiles(Array.from(e.target.files || []))}
+                                style={{ marginBottom: '1rem' }}
+                            />
+
                             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
                                 <Button variant="outline" onClick={() => setDisputeModalOpen(false)} disabled={loading}>Cancelar</Button>
                                 <Button onClick={handleDispute} disabled={loading}>{loading ? 'Enviando...' : 'Enviar Reporte'}</Button>
@@ -151,7 +261,7 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
             {status === 'confirmed' && meetingUrl && (
                 <div style={{ width: '100%' }}>
-                    {isJoinable ? (
+                    {isJoinable && (remaining === null || remaining > 0) ? (
                         <Link href={`/call?roomUrl=${encodeURIComponent(meetingUrl)}&userName=${encodeURIComponent(userName || 'Usuario')}&bookingId=${bookingId}`} target="_blank" style={{ width: '100%' }}>
                             <Button fullWidth style={{ gap: '0.5rem' }}>
                                 <VideoIcon size={16} /> Unirse ahora
@@ -167,19 +277,43 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                             </span>
                         </div>
                     )}
+                    {remaining !== null && (
+                        <div style={{ marginTop: '0.5rem', textAlign: 'center', fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>
+                            {remaining > 0 ? (
+                                <span>Quedan {String(Math.floor(remaining / 60)).padStart(2, '0')}:{String(remaining % 60).padStart(2, '0')}</span>
+                            ) : (
+                                <span>Sesión finalizada</span>
+                            )}
+                        </div>
+                    )}
+                    {remaining !== null && remaining > 0 && remaining <= 600 && (
+                        <div style={{ marginTop: '0.25rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 600,
+                            color: 'rgb(var(--warning))' }}>
+                            Sesión por expirar (~10 min)
+                        </div>
+                    )}
+                    {remaining !== null && remaining === 0 && !hasReview && (
+                        <div style={{ marginTop: '0.5rem' }}>
+                            <Link href={`/call/feedback/${bookingId}`} style={{ width: '100%' }}>
+                                <Button fullWidth variant="outline">Calificar</Button>
+                            </Link>
+                        </div>
+                    )}
                 </div>
             )}
 
-            <Button
-                variant="outline"
-                fullWidth
-                style={{ color: 'rgb(var(--error))', borderColor: 'rgb(var(--error))' }}
-                onClick={() => setCancelModalOpen(true)}
-                disabled={loading}
-            >
-                <XCircle size={16} style={{ marginRight: '0.5rem' }} />
-                {loading ? 'Cancelando...' : 'Cancelar Reserva'}
-            </Button>
+            {(!remaining || remaining > 0) && (
+                <Button
+                    variant="outline"
+                    fullWidth
+                    style={{ color: 'rgb(var(--error))', borderColor: 'rgb(var(--error))' }}
+                    onClick={() => setCancelModalOpen(true)}
+                    disabled={loading}
+                >
+                    <XCircle size={16} style={{ marginRight: '0.5rem' }} />
+                    {loading ? 'Cancelando...' : 'Cancelar Reserva'}
+                </Button>
+            )}
 
             {/* Simple Modal Implementation */}
             {cancelModalOpen && (

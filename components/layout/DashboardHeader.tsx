@@ -1,6 +1,7 @@
 "use client";
 
 import { Home, Bell, User, LogOut, ChevronDown } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -63,7 +64,7 @@ export const DashboardHeader = ({ userType = 'user', userName = 'Usuario', avata
                             </div>
                             <div className={styles.avatar}>
                                 {avatar ? (
-                                    <img src={avatar} alt={userName} />
+                                    <Image src={avatar} alt={userName} width={24} height={24} />
                                 ) : (
                                     <User size={20} color="white" />
                                 )}

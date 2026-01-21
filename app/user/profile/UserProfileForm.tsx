@@ -8,8 +8,19 @@ import Image from 'next/image';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 
+interface UserProfile {
+    id: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    city?: string;
+    country?: string;
+    email?: string;
+    avatar_url?: string;
+}
+
 interface UserProfileFormProps {
-    user: any;
+    user: UserProfile;
 }
 
 export default function UserProfileForm({ user }: UserProfileFormProps) {
@@ -67,9 +78,10 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
 
             router.refresh();
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error uploading avatar:', error);
-            alert(`Error: ${error.message}`);
+            const msg = (error as { message?: string }).message || 'Error subiendo imagen';
+            alert(`Error: ${msg}`);
         } finally {
             setUploading(false);
         }
@@ -100,9 +112,10 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
             alert('Perfil actualizado correctamente');
             router.refresh();
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error updating profile:', error);
-            alert(`Error al actualizar el perfil: ${error.message}`);
+            const msg = (error as { message?: string }).message || 'No se pudo actualizar el perfil';
+            alert(`Error al actualizar el perfil: ${msg}`);
         } finally {
             setIsLoading(false);
         }

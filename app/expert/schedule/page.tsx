@@ -57,7 +57,7 @@ export default function ExpertSchedulePage() {
             if (availability && availability.length > 0) {
                 const newDays = DAYS_MAP.map(dayMap => {
                     // Find all slots for this day index
-                    const daySlots = availability.filter((a: any) => a.day_of_week === dayMap.index);
+                    const daySlots = availability.filter((a: { day_of_week: number }) => a.day_of_week === dayMap.index);
 
                     if (daySlots.length > 0) {
                         // Currently simplified to support multiple slots visually, but DB schema I designed 
@@ -65,7 +65,7 @@ export default function ExpertSchedulePage() {
                         // but schema allows multiple. Let's map all rows as slots.
                         // However, 'is_active' is per row. Providing any row exists and is_active=true means day is active.
 
-                        const activeSlots = daySlots.filter((s: any) => s.is_active);
+                        const activeSlots = daySlots.filter((s: { is_active: boolean }) => s.is_active);
                         const isDayActive = activeSlots.length > 0;
 
                         return {
@@ -75,7 +75,7 @@ export default function ExpertSchedulePage() {
                             // Map slots. If no active slots but records exist (all inactive?), show default.
                             // Actually, let's just show active slots.
                             slots: isDayActive
-                                ? activeSlots.map((s: any) => ({
+                                ? activeSlots.map((s: { start_time: string; end_time: string }) => ({
                                     start: s.start_time.slice(0, 5),
                                     end: s.end_time.slice(0, 5)
                                 }))
@@ -97,7 +97,7 @@ export default function ExpertSchedulePage() {
             if (exceptError) throw exceptError;
 
             if (excepts) {
-                setExceptions(excepts.map((e: any) => ({ id: e.id, date: e.date })));
+                setExceptions(excepts.map((e: { id?: string; date: string }) => ({ id: e.id, date: e.date })));
             }
 
         } catch (error) {
@@ -127,7 +127,7 @@ export default function ExpertSchedulePage() {
             if (deleteError) throw deleteError;
 
             // 2. Insert new availability
-            const rowsToInsert: any[] = [];
+            const rowsToInsert: { expert_id: string; day_of_week: number | undefined; start_time: string; end_time: string; is_active: boolean }[] = [];
 
             days.forEach(day => {
                 if (day.active) {
@@ -177,9 +177,10 @@ export default function ExpertSchedulePage() {
             alert("Horarios guardados correctamente");
             router.refresh();
 
-        } catch (error: any) {
-            console.error("Error saving schedule:", error);
-            alert("Error al guardar: " + error.message);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error("Error saving schedule:", message);
+            alert("Error al guardar: " + message);
         } finally {
             setIsSaving(false);
         }

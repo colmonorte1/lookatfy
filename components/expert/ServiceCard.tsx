@@ -1,15 +1,28 @@
 "use client";
 
 import { Button } from '@/components/ui/Button/Button';
-import { Edit2, Trash2, MapPin, Clock, AlertTriangle, Check, X, CheckCircle, XCircle } from 'lucide-react';
+import { Edit2, Trash2, MapPin, Clock, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 
+interface Service {
+    id: string;
+    title: string;
+    price: number;
+    duration?: number;
+    location?: string;
+    description?: string;
+    image_url?: string;
+    type?: string;
+    includes?: string[];
+    not_includes?: string[];
+}
+
 interface ServiceCardProps {
-    service: any;
+    service: Service;
 }
 
 export default function ServiceCard({ service }: ServiceCardProps) {
@@ -178,7 +191,7 @@ export default function ServiceCard({ service }: ServiceCardProps) {
                             <div>
                                 <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem' }}>¿Eliminar servicio?</h3>
                                 <p style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem', lineHeight: 1.5 }}>
-                                    Estás a punto de eliminar <strong>"{service.title}"</strong>.
+                                    Estás a punto de eliminar <strong>&ldquo;{service.title}&rdquo;</strong>.
                                     Esta acción hará que el servicio deje de ser visible para los clientes.
                                     <br /><br />
                                     <em style={{ fontSize: '0.85rem' }}>(Nota: Los datos no se borrarán de la base de datos, solo se archivarán)</em>

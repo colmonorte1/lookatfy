@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import { Settings, Save, DollarSign, Shield, Bell, Globe, Plus, Trash2, MapPin, Tag, X } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs/Tabs';
-import { getPlatformSettings, updatePlatformSettings, getMasterData, addCountry, deleteCountry, addCurrency, deleteCurrency, addCategory, deleteCategory } from './actions';
+import { getPlatformSettings, updatePlatformSettings, getMasterData, addCountry, deleteCountry, addCurrency, deleteCurrency, addCategory, deleteCategory, addServiceType, deleteServiceType, updateServiceType } from './actions';
 import { Input } from '@/components/ui/Input/Input';
 
 export default function AdminSettingsPage() {
@@ -35,6 +35,11 @@ export default function AdminSettingsPage() {
     const [categoryModalOpen, setCategoryModalOpen] = useState(false);
     const [newCategory, setNewCategory] = useState({ name: '', slug: '', icon: '' });
 
+    const [serviceTypeModalOpen, setServiceTypeModalOpen] = useState(false);
+    const [editServiceTypeId, setEditServiceTypeId] = useState<string | null>(null);
+    const [serviceTypes, setServiceTypes] = useState<any[]>([]);
+    const [newServiceType, setNewServiceType] = useState({ name: '', slug: '' });
+
     useEffect(() => {
         loadData();
     }, []);
@@ -59,6 +64,7 @@ export default function AdminSettingsPage() {
             setCountries(masterData.countries);
             setCurrencies(masterData.currencies);
             setCategories(masterData.categories);
+            setServiceTypes(masterData.service_types);
         }
         setIsLoading(false);
     };
@@ -149,6 +155,27 @@ export default function AdminSettingsPage() {
         else loadData();
     };
 
+    const handleSaveServiceType = async () => {
+        if (!newServiceType.name) return alert('Nombre requerido');
+        const res = editServiceTypeId
+            ? await updateServiceType(editServiceTypeId, newServiceType)
+            : await addServiceType(newServiceType);
+        if (res.error) alert(res.error);
+        else {
+            setServiceTypeModalOpen(false);
+            setEditServiceTypeId(null);
+            setNewServiceType({ name: '', slug: '' });
+            loadData();
+        }
+    };
+
+    const handleDeleteServiceType = async (id: string) => {
+        if (!confirm('¿Eliminar tipo de servicio?')) return;
+        const res = await deleteServiceType(id);
+        if (res.error) alert(res.error);
+        else loadData();
+    };
+
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -165,7 +192,7 @@ export default function AdminSettingsPage() {
             <Tabs defaultValue="business">
                 <TabsList>
                     <TabsTrigger value="business">Reglas de Negocio</TabsTrigger>
-                    <TabsTrigger value="master-data">Países, Monedas y Categorías</TabsTrigger>
+                    <TabsTrigger value="master-data">Países, Monedas, Categorías y Tipos</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="business">
@@ -345,7 +372,7 @@ export default function AdminSettingsPage() {
                 </TabsContent>
 
                 <TabsContent value="master-data">
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2rem', marginTop: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '2rem', marginTop: '1rem' }}>
 
                         {/* Countries Column */}
                         <div style={{ background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))', overflow: 'hidden' }}>
@@ -489,6 +516,57 @@ export default function AdminSettingsPage() {
                                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                                         <Button size="sm" variant="secondary" onClick={() => setCategoryModalOpen(false)}>Cancelar</Button>
                                         <Button size="sm" onClick={handleAddCategory}>Guardar</Button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Service Types Column */}
+                        <div style={{ background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))', overflow: 'hidden' }}>
+                            <div style={{ padding: '1.5rem', borderBottom: '1px solid rgb(var(--border))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h2 style={{ fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <Tag size={18} /> Tipos de Servicio
+                                </h2>
+                                <Button size="sm" variant="outline" onClick={() => { setEditServiceTypeId(null); setNewServiceType({ name: '', slug: '' }); setServiceTypeModalOpen(true); }}><Plus size={16} /></Button>
+                            </div>
+                            <div>
+                                {serviceTypes.map(t => (
+                                    <div key={t.id} style={{ padding: '1rem', borderBottom: '1px solid rgb(var(--border))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <div style={{ fontWeight: 600 }}>{t.name}</div>
+                                            {t.slug && <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>{t.slug}</div>}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <button onClick={() => { setEditServiceTypeId(t.id); setNewServiceType({ name: t.name, slug: t.slug || '' }); setServiceTypeModalOpen(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgb(var(--text-secondary))' }}>
+                                                Editar
+                                            </button>
+                                            <button onClick={() => handleDeleteServiceType(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgb(var(--text-secondary))' }}>
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {serviceTypes.length === 0 && <div style={{ padding: '1rem', color: 'rgb(var(--text-muted))', textAlign: 'center' }}>No hay tipos registrados</div>}
+                            </div>
+
+                            {serviceTypeModalOpen && (
+                                <div style={{ padding: '1rem', background: 'rgb(var(--surface-hover))', borderTop: '1px solid rgb(var(--border))', animation: 'fadeIn 0.2s' }}>
+                                    <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem' }}>{editServiceTypeId ? 'Editar Tipo de Servicio' : 'Agregar Tipo de Servicio'}</h3>
+                                    <Input
+                                        placeholder="Nombre (ej: Videollamada)"
+                                        value={newServiceType.name}
+                                        onChange={e => setNewServiceType({ ...newServiceType, name: e.target.value, slug: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
+                                        style={{ marginBottom: '0.5rem' }}
+                                    />
+                                    <Input
+                                        placeholder="Slug (opcional)"
+                                        value={newServiceType.slug}
+                                        onChange={e => setNewServiceType({ ...newServiceType, slug: e.target.value })}
+                                        style={{ marginBottom: '0.5rem' }}
+                                    />
+                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                        <Button size="sm" variant="secondary" onClick={() => setServiceTypeModalOpen(false)}>Cancelar</Button>
+                                        <Button size="sm" onClick={() => handleSaveServiceType()}>{editServiceTypeId ? 'Actualizar' : 'Guardar'}</Button>
                                     </div>
                                 </div>
                             )}

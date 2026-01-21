@@ -52,28 +52,66 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
     // The joined data `service.expert` will contain `profile` object.
     // Let's flatten it for easier consumption.
 
-    // Fetch Reviews (Last 5 for this expert)
-    // We join reviewer:profiles to get name/avatar
-    const { data: reviewsData } = await supabase
-        .from('reviews')
-        .select(`
-            *,
-            reviewer:profiles!reviewer_id ( full_name, avatar_url )
-        `)
-        .eq('subject_id', service.expert_id)
+    // Fetch Service-specific Reviews (last 5)
+    const { data: bookingsForService } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('service_id', service.id)
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(50);
 
-    const reviews = reviewsData || [];
+    const bookingIds = (bookingsForService || []).map((b: { id: string }) => b.id);
+
+    let reviews: any[] = [];
+    if (bookingIds.length > 0) {
+        try {
+            const { data: reviewsData } = await supabase
+                .from('reviews')
+                .select(`
+                    *,
+                    reviewer:profiles!reviewer_id ( full_name, avatar_url ),
+                    subject:profiles!subject_id!inner ( role )
+                `)
+                .in('booking_id', bookingIds)
+                .eq('subject.role', 'expert')
+                .order('created_at', { ascending: false })
+                .limit(5);
+            reviews = reviewsData || [];
+        } catch {
+            const { data: reviewsAll } = await supabase
+                .from('reviews')
+                .select(`
+                    *,
+                    reviewer:profiles!reviewer_id ( full_name, avatar_url ),
+                    subject:profiles!subject_id ( role )
+                `)
+                .in('booking_id', bookingIds)
+                .order('created_at', { ascending: false })
+                .limit(10);
+            reviews = (reviewsAll || []).filter((r: any) => r.subject?.role === 'expert').slice(0, 5);
+        }
+    }
 
     // Safety check if expert link is broken (though RLS/FK should prevent this)
+    // Compute Expert-wide rating stats
+    let expertAvg = 5.0;
+    let expertCount = 0;
+    try {
+        const { data: expertRatings } = await supabase
+            .from('reviews')
+            .select('rating')
+            .eq('subject_id', service.expert_id);
+        const ratings = (expertRatings || []).map((r: any) => Number(r.rating)).filter((n) => !isNaN(n));
+        expertCount = ratings.length;
+        expertAvg = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length) : 5.0;
+    } catch {}
+
     const expertData = service.expert ? {
         ...service.expert,
         full_name: service.expert.profile?.full_name,
         avatar_url: service.expert.profile?.avatar_url,
-        // Use real rating if available (or calculate from reviews if not stored on expert)
-        rating: service.expert.rating || 5.0,
-        reviews_count: service.expert.reviews_count || reviews.length,
+        rating_avg: Number(expertAvg.toFixed(1)),
+        reviews_total: expertCount,
         verified: service.expert.verified
     } : {};
 

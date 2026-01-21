@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { CheckCircle, Calendar, Clock, Video, User, Download, Copy } from 'lucide-react';
+import { CheckCircle, Calendar, Clock, Video, User } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Link from 'next/link';
 import confetti from 'canvas-confetti';
@@ -40,15 +40,13 @@ function SuccessContent() {
                 ¡Reserva Confirmada!
             </h1>
             <p style={{ fontSize: '1.1rem', color: 'rgb(var(--text-secondary))', marginBottom: '3rem' }}>
-                Tu sesión ha sido agendada correctamente. Guarda el enlace de tu sala.
+                Tu sesión ha sido agendada correctamente.
             </p>
 
             <div style={{ background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))', overflow: 'hidden', textAlign: 'left', marginBottom: '2rem' }}>
                 <div style={{ background: 'rgb(var(--surface-hover))', padding: '1rem 1.5rem', borderBottom: '1px solid rgb(var(--border))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.9rem', color: 'rgb(var(--text-secondary))', fontWeight: 500 }}>Orden #{orderId}</span>
-                    <button onClick={() => { navigator.clipboard.writeText(roomUrl || ''); alert('Enlace copiado!'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgb(var(--primary))', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}>
-                        <Copy size={14} /> Copiar Enlace Sala
-                    </button>
+                    <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}></span>
                 </div>
 
                 <div style={{ padding: '2rem' }}>
@@ -84,6 +82,17 @@ function SuccessContent() {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <div style={{ padding: '1.5rem', borderTop: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.75rem' }}>Recomendaciones antes de la llamada</h3>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '0.5rem' }}>
+                        <li style={{ color: 'rgb(var(--text-secondary))' }}>Conexión a internet estable</li>
+                        <li style={{ color: 'rgb(var(--text-secondary))' }}>Buena iluminación frontal</li>
+                        <li style={{ color: 'rgb(var(--text-secondary))' }}>Auriculares para mejor audio</li>
+                        <li style={{ color: 'rgb(var(--text-secondary))' }}>Entorno silencioso</li>
+                        <li style={{ color: 'rgb(var(--text-secondary))' }}>Prueba cámara y micrófono antes de entrar</li>
+                    </ul>
                 </div>
 
                 <div style={{ padding: '1.5rem', background: 'rgb(var(--surface-hover))', borderTop: '1px solid rgb(var(--border))', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
