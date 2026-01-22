@@ -165,10 +165,10 @@ export default function EditServicePage({ params }: { params: Promise<{ id: stri
                 setRequirements(data.requirements || '');
                 const reqText = data.requirements || '';
                 const parts = reqText.split(' | ');
-                const b = parts.find(p => p.startsWith('Beneficios:')) || '';
-                const r = parts.find(p => p.startsWith('Requisitos:')) || '';
-                const bItems = b.replace('Beneficios:', '').split(';').map(s => s.trim()).filter(Boolean);
-                const rItems = r.replace('Requisitos:', '').split(';').map(s => s.trim()).filter(Boolean);
+                const b = parts.find((p: string) => p.startsWith('Beneficios:')) || '';
+                const r = parts.find((p: string) => p.startsWith('Requisitos:')) || '';
+                const bItems = b.replace('Beneficios:', '').split(';').map((s: string) => s.trim()).filter(Boolean);
+                const rItems = r.replace('Requisitos:', '').split(';').map((s: string) => s.trim()).filter(Boolean);
                 if (bItems.length) setBenefitsList(bItems);
                 if (rItems.length) setRequirementsList(rItems);
                 if (data.image_url) {

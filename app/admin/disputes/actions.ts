@@ -244,9 +244,22 @@ export async function addUserEvidence(disputeId: string, attachments: string[]) 
     } catch {}
 
     const existing: string[] = Array.isArray(dispute.user_attachments) ? dispute.user_attachments : [];
-    const merged = [...existing, ...attachments];
+    const merged = [...existing, ...attachments.filter((p) => p.startsWith(`${user.id}/`))];
 
-    const { error } = await supabase
+    let writeClient = supabase;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_SUPABASE_SERVICE_ROLE_KEY;
+    if (serviceRoleKey) {
+        try {
+            const { createServerClient } = await import('@supabase/ssr');
+            writeClient = createServerClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                serviceRoleKey,
+                { cookies: { getAll: () => [], setAll: () => { } } }
+            );
+        } catch {}
+    }
+
+    const { error } = await writeClient
         .from('disputes')
         .update({ user_attachments: merged, updated_at: new Date().toISOString() })
         .eq('id', disputeId);
@@ -280,9 +293,22 @@ export async function addExpertEvidence(disputeId: string, attachments: string[]
     } catch {}
 
     const existing: string[] = Array.isArray((dispute as Row).expert_attachments) ? ((dispute as Row).expert_attachments as string[]) : [];
-    const merged = [...existing, ...attachments];
+    const merged = [...existing, ...attachments.filter((p) => p.startsWith(`${user.id}/`))];
 
-    const { error } = await supabase
+    let writeClient = supabase;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_SUPABASE_SERVICE_ROLE_KEY;
+    if (serviceRoleKey) {
+        try {
+            const { createServerClient } = await import('@supabase/ssr');
+            writeClient = createServerClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                serviceRoleKey,
+                { cookies: { getAll: () => [], setAll: () => { } } }
+            );
+        } catch {}
+    }
+
+    const { error } = await writeClient
         .from('disputes')
         .update({ expert_attachments: merged, updated_at: new Date().toISOString() })
         .eq('id', disputeId);

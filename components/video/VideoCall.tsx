@@ -98,11 +98,13 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
                         const supabase = (await import('@/utils/supabase/client')).createClient();
                         const { data: booking } = await supabase
                             .from('bookings')
-                            .select('date, time, services:service_id(duration)')
+                            .select('date, time, service:services!service_id(duration)')
                             .eq('id', bookingId)
                             .single();
 
-                        const durationMin: number = booking?.services?.duration ?? 60;
+                        const durationMin: number = (booking?.service && !Array.isArray(booking.service))
+                            ? Number(booking.service.duration) || 60
+                            : Number(Array.isArray(booking?.service) ? booking?.service?.[0]?.duration : undefined) || 60;
                         const scheduledStart = (() => {
                             try {
                                 const [y, m, d] = String(booking?.date || '').split('-').map(Number);

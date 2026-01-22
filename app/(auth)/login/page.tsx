@@ -56,8 +56,9 @@ export default function LoginPage() {
                 router.refresh();
             }
 
-        } catch (err: any) {
-            setError(err.message || 'Error al iniciar sesión');
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setError(msg || 'Error al iniciar sesión');
         } finally {
             setIsLoading(false);
         }

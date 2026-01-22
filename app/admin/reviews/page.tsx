@@ -49,8 +49,17 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
     // The explicit inner join string syntax above is tricky in some versions.
     // Let's fetch all and filter JS for safety in this environment.
 
-    const allReviews = reviews || [];
-    const filteredReviews = allReviews.filter((r: any) => r.subject?.role === targetRole);
+    type ReviewRow = {
+        id: string;
+        created_at: string;
+        rating: number;
+        comment?: string | null;
+        reviewer?: { full_name?: string | null; role?: string | null; email?: string | null } | null;
+        subject?: { full_name?: string | null; role?: string | null; email?: string | null } | null;
+        booking?: { service?: { title?: string | null } | null } | null;
+    };
+    const allReviews: ReviewRow[] = (reviews || []) as ReviewRow[];
+    const filteredReviews: ReviewRow[] = allReviews.filter((r) => r.subject?.role === targetRole);
 
     return (
         <div>
@@ -104,7 +113,7 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
                                 </td>
                             </tr>
                         ) : (
-                            filteredReviews.map((review: any) => (
+                            filteredReviews.map((review) => (
                                 <tr key={review.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
                                     <td style={{ padding: '1rem' }}>
                                         {new Date(review.created_at).toLocaleDateString()}

@@ -1,4 +1,3 @@
-import { ExpertCard } from '@/components/marketplace/ExpertCard';
 import ExpertsClient from '@/components/marketplace/ExpertsClient';
 import { createClient } from '@/utils/supabase/server';
 import { Expert } from '@/lib/data/experts';
@@ -30,19 +29,22 @@ export default async function ExpertsPage() {
         reviews_count?: number;
         profile?: { full_name?: string; avatar_url?: string };
         services?: Array<{ price?: number; status?: string; category?: string }>;
+        languages?: Array<{ name: string; level: string }> | null;
+        skills?: Array<{ name: string; level: string }> | null;
     };
 
     const rows = (experts as ExpertRow[] || []);
     const expertIds = rows.map(e => e.id).filter(Boolean);
 
-    let ratingMap: Record<string, { avg: number; count: number }> = {};
+    const ratingMap: Record<string, { avg: number; count: number }> = {};
     if (expertIds.length) {
         const { data: ratingsData } = await supabase
             .from('reviews')
             .select('subject_id, rating')
             .in('subject_id', expertIds);
+        type ReviewRow = { subject_id: string; rating: number };
         const agg: Record<string, number[]> = {};
-        (ratingsData || []).forEach((r: any) => {
+        (ratingsData as ReviewRow[] || []).forEach((r) => {
             const id = r.subject_id;
             const val = Number(r.rating);
             if (!isNaN(val)) {
@@ -59,7 +61,9 @@ export default async function ExpertsPage() {
 
     const items: Expert[] = rows.map((e) => {
         const firstActiveService = Array.isArray(e.services) ? e.services.find((s) => s.status === 'active') : null;
-        const categories = Array.isArray(e.services) ? Array.from(new Set(e.services.map((s) => s.category).filter(Boolean))) : [];
+        const categories: string[] = Array.isArray(e.services)
+            ? Array.from(new Set(e.services.map((s) => s.category).filter((v): v is string => typeof v === 'string')))
+            : [];
         return {
             id: e.id,
             name: e.profile?.full_name || 'Experto',
@@ -70,6 +74,9 @@ export default async function ExpertsPage() {
             image: e.profile?.avatar_url || 'https://i.pravatar.cc/400?u=expert',
             tags: categories,
             bio: '',
+            isOnline: Boolean(firstActiveService),
+            languages: Array.isArray(e.languages) ? e.languages : [],
+            skills: Array.isArray(e.skills) ? e.skills : [],
         };
     });
 

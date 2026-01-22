@@ -2,6 +2,37 @@ import DisputesClient from './DisputesClient';
 import { createClient } from '@/utils/supabase/server';
 import { createServerClient } from '@supabase/ssr';
 
+type Reporter = { full_name?: string | null; role?: 'client' | 'expert' | 'admin' | null };
+type DisputeRow = {
+    id: string;
+    created_at: string;
+    reason: string;
+    description: string;
+    status: 'open' | 'under_review' | 'resolved_refunded' | 'resolved_dismissed';
+    resolution_notes?: string | null;
+    resolved_at?: string | null;
+    user_attachments?: string[] | null;
+    expert_attachments?: string[] | null;
+    expert_response?: string | null;
+    user_response?: string | null;
+    booking_id?: string | null;
+    reporter?: Reporter;
+};
+type BookingJoin = {
+    id: string;
+    service?: { title?: string | null };
+    user?: { full_name?: string | null; email?: string | null };
+    expert?: { profile?: { full_name?: string | null; email?: string | null } };
+};
+type BookingView = {
+    id: string;
+    service?: { title?: string };
+    user?: { full_name?: string; email?: string };
+    expert?: { full_name?: string; email?: string };
+};
+
+type AdminDispute = DisputeRow & { booking?: BookingView };
+
 export default async function DisputesPage() {
     const supabase = await createClient();
 
@@ -48,9 +79,9 @@ export default async function DisputesPage() {
         `)
         .order('created_at', { ascending: false });
 
-    const list = disputes || [];
-    const bookingIds = list.map((d: any) => d.booking_id).filter(Boolean);
-    let bookingMap: Record<string, any> = {};
+    const list: DisputeRow[] = (disputes || []) as DisputeRow[];
+    const bookingIds = list.map((d) => d.booking_id).filter((v): v is string => typeof v === 'string');
+    const bookingMap: Record<string, BookingView> = {};
     if (bookingIds.length > 0) {
         const { data: bookings } = await client
             .from('bookings')
@@ -64,19 +95,20 @@ export default async function DisputesPage() {
             `)
             .in('id', bookingIds);
 
-        (bookings || []).forEach((b: any) => {
-            bookingMap[b.id] = {
-                id: b.id,
-                service: { title: b?.service?.title },
-                user: { full_name: b?.user?.full_name, email: b?.user?.email },
-                expert: { full_name: b?.expert?.profile?.full_name, email: b?.expert?.profile?.email }
+        (bookings || []).forEach((b) => {
+            const row = b as BookingJoin;
+            bookingMap[row.id] = {
+                id: row.id,
+                service: { title: row?.service?.title || undefined },
+                user: { full_name: row?.user?.full_name || undefined, email: row?.user?.email || undefined },
+                expert: { full_name: row?.expert?.profile?.full_name || undefined, email: row?.expert?.profile?.email || undefined }
             };
         });
     }
 
-    const enriched = list.map((d: any) => ({
+    const enriched: AdminDispute[] = list.map((d) => ({
         ...d,
-        booking: bookingMap[d.booking_id] || undefined
+        booking: d.booking_id ? bookingMap[d.booking_id] : undefined
     }));
 
     return <DisputesClient initialDisputes={enriched} />;

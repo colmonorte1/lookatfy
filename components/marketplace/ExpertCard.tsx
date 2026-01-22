@@ -47,6 +47,26 @@ export const ExpertCard = ({ expert }: ExpertCardProps) => {
                     ))}
                 </div>
 
+                {Array.isArray(expert.languages) && expert.languages.length > 0 && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                        <div className={styles.tags} aria-label="Idiomas">
+                            {expert.languages.slice(0, 4).map((l, idx) => (
+                                <span key={`${l.name}-${idx}`} className={styles.tag}>{l.name} · {l.level}</span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {Array.isArray(expert.skills) && expert.skills.length > 0 && (
+                    <div style={{ marginTop: '0.25rem' }}>
+                        <div className={styles.tags} aria-label="Skills">
+                            {expert.skills.slice(0, 4).map((s, idx) => (
+                                <span key={`${s.name}-${idx}`} className={styles.tag}>{s.name} · {s.level}</span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <div className={styles.footer}>
                     <div className={styles.price}>
                         <span className={styles.amount}>${expert.price}</span>

@@ -9,9 +9,43 @@ import { ReviewsList } from '@/components/ui/Reviews/ReviewsList';
 import { BookingCalendar } from '@/components/ui/Calendar/BookingCalendar';
 
 interface ServiceDetailProps {
-    service: any; // Type should ideally be stricter
-    expert: any;
-    reviews?: any[];
+    service: {
+        id: string;
+        title?: string;
+        price?: number | string;
+        currency?: string;
+        country?: string | null;
+        image_url?: string | null;
+        expert_id?: string;
+        description?: string | null;
+        includes?: string[] | null;
+        not_includes?: string[] | null;
+        benefits?: string[] | null;
+        client_requirements?: string[] | null;
+        requirements?: string | null;
+        type?: string | null;
+        duration?: number | null;
+    };
+    expert: {
+        full_name?: string | null;
+        avatar_url?: string | null;
+        title?: string | null;
+        rating_avg?: number | null;
+        reviews_total?: number | null;
+        bio?: string | null;
+        verified?: boolean | null;
+        country?: string | null;
+        name?: string | null;
+        languages?: Array<{ name: string; level: string }>;
+        skills?: Array<{ name: string; level: string }>;
+    };
+    reviews?: {
+        id: string;
+        rating: number;
+        comment?: string | null;
+        created_at: string;
+        reviewer?: { full_name?: string | null; avatar_url?: string | null } | null;
+    }[];
 }
 
 export default function ServiceDetailClient({ service, expert, reviews = [] }: ServiceDetailProps) {
@@ -22,7 +56,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
     const priceLabel = new Intl.NumberFormat('es-ES', { style: 'currency', currency: service.currency || 'USD' }).format(Number(service.price) || 0);
     const country = service.country || expert.country || 'Global';
 
-    const formattedReviews = reviews.map(r => ({
+    const formattedReviews = (reviews || []).map((r) => ({
         id: r.id,
         author: r.reviewer?.full_name || 'Usuario',
         rating: r.rating,
@@ -48,8 +82,8 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
         const formattedDate = dateObj.toISOString().split('T')[0];
 
         const params = new URLSearchParams({
-            title: service.title,
-            expert: expert.name || 'Experto',
+            title: service.title || '',
+            expert: expert.name || expert.full_name || 'Experto',
             price: service.price.toString(),
             date: formattedDate,
             time: selectedTime,
@@ -136,6 +170,26 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                             <p style={{ fontSize: '0.95rem', color: 'rgb(var(--text-secondary))', lineHeight: '1.5' }}>
                                 "{expert.bio || 'Experto verificado en Lookatfy.'}"
                             </p>
+                            {Array.isArray(expert.languages) && expert.languages.length > 0 && (
+                                <div style={{ marginTop: '0.75rem' }}>
+                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.25rem' }}>Idiomas</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }} aria-label="Idiomas">
+                                        {expert.languages.map((l, idx) => (
+                                            <span key={`${l.name}-${idx}`} style={{ background: 'rgb(var(--surface-hover))', color: 'rgb(var(--text-secondary))', padding: '2px 8px', borderRadius: 6, fontSize: '0.75rem' }}>{l.name} · {l.level}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {Array.isArray(expert.skills) && expert.skills.length > 0 && (
+                                <div style={{ marginTop: '0.5rem' }}>
+                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.25rem' }}>Skills</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }} aria-label="Skills">
+                                        {expert.skills.map((s, idx) => (
+                                            <span key={`${s.name}-${idx}`} style={{ background: 'rgb(var(--surface-hover))', color: 'rgb(var(--text-secondary))', padding: '2px 8px', borderRadius: 6, fontSize: '0.75rem' }}>{s.name} · {s.level}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 

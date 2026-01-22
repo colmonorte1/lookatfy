@@ -3,6 +3,13 @@ import { Button } from '@/components/ui/Button/Button';
 import { Plus, Edit2, Trash2, Eye, Ban } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
 
+interface ProfileRow {
+    id: string;
+    full_name?: string | null;
+    email?: string | null;
+    role?: 'client' | 'expert' | 'admin' | null;
+}
+
 export default async function UsersPage() {
     const supabase = await createClient();
 
@@ -23,7 +30,7 @@ export default async function UsersPage() {
     // OR show everyone since it's "Users".
     // The previous code had: USERS_MOCK.filter(u => u.role !== 'expert')
     // Let's replicate this behavior to keep the separate "Experts" View meaningful.
-    const filteredUsers = (users || []).filter((u: any) => u.role !== 'expert');
+    const filteredUsers: ProfileRow[] = (users || []).filter((u: ProfileRow) => u.role !== 'expert');
 
     return (
         <div>
@@ -54,7 +61,7 @@ export default async function UsersPage() {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredUsers.map((user: any) => (
+                        {filteredUsers.map((user: ProfileRow) => (
                             <tr key={user.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
                                 <td style={{ padding: '1rem' }}>
                                     <div style={{ fontWeight: 500 }}>{user.full_name || 'Sin Nombre'}</div>

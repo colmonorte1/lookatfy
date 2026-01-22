@@ -24,8 +24,9 @@ export default function ForgotPasswordPage() {
             });
             if (error) throw error;
             setIsSent(true);
-        } catch (err: any) {
-            setError(err.message || "Error al enviar el correo");
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setError(msg || "Error al enviar el correo");
         } finally {
             setIsLoading(false);
         }

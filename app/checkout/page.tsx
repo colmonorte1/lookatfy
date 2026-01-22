@@ -140,8 +140,11 @@ function CheckoutContent() {
                     .select('profile:profiles(full_name)')
                     .eq('id', expertId)
                     .single();
-                if (expertRow?.profile?.full_name) {
-                    expertLabel = expertRow.profile.full_name as string;
+                type Prof = { full_name?: string };
+                const profileVal = (expertRow as { profile?: Prof | Prof[] } | null)?.profile;
+                const prof: Prof | undefined = Array.isArray(profileVal) ? profileVal[0] : profileVal;
+                if (prof?.full_name) {
+                    expertLabel = prof.full_name;
                 }
             } catch {}
 

@@ -21,8 +21,9 @@ export default async function ServicesSearchPage({ searchParams }: { searchParam
       anon.from('service_categories').select('name').order('name'),
       anon.from('active_countries').select('name').order('name')
     ]);
-    const categoriesList = Array.from(new Set((catRows || []).map((r: any) => String(r.name)).filter(Boolean)));
-    const countriesList = Array.from(new Set((countryRows || []).map((r: any) => String(r.name)).filter(Boolean)));
+    type NameRow = { name: string | null };
+    const categoriesList = Array.from(new Set(((catRows || []) as NameRow[]).map((r) => r.name).filter((n): n is string => !!n)));
+    const countriesList = Array.from(new Set(((countryRows || []) as NameRow[]).map((r) => r.name).filter((n): n is string => !!n)));
     return { categoriesList, countriesList };
   }, ['filters-master'], { revalidate: 300 });
 
@@ -54,10 +55,17 @@ export default async function ServicesSearchPage({ searchParams }: { searchParam
   const { data: services } = await query.order('created_at', { ascending: false }).limit(50);
   const hasServices = Array.isArray(services) && services.length > 0;
 
-  let filtered = (services || []);
+  type ServiceRow = {
+    id: string;
+    title?: string | null;
+    category?: string | null;
+    country?: string | null;
+    expert?: { country?: string | null; profile?: { full_name?: string | null; avatar_url?: string | null } | null } | null;
+  };
+  let filtered: ServiceRow[] = ((services || []) as ServiceRow[]);
   if (q && q.trim()) {
     const term = normalize(q.trim());
-    filtered = filtered.filter((s: any) => {
+    filtered = filtered.filter((s) => {
       const t = normalize(String(s.title || ''));
       const n = normalize(String(s.expert?.profile?.full_name || ''));
       return t.includes(term) || n.includes(term);
@@ -65,7 +73,7 @@ export default async function ServicesSearchPage({ searchParams }: { searchParam
   }
   if (country && country !== 'Todos') {
     const c = normalize(country);
-    filtered = filtered.filter((s: any) => {
+    filtered = filtered.filter((s) => {
       const sc = String(s.country || s.expert?.country || '');
       return sc && normalize(sc).includes(c);
     });
@@ -73,12 +81,13 @@ export default async function ServicesSearchPage({ searchParams }: { searchParam
 
   let serviceRatingMap: Record<string, { avg: number; count: number }> = {};
   if (filtered.length) {
-    const serviceIds = filtered.map((s: any) => s.id);
+    const serviceIds = filtered.map((s) => s.id);
     const { data: bookings } = await supabase
       .from('bookings')
       .select('id, service_id')
       .in('service_id', serviceIds);
-    const bookingIds = (bookings || []).map((b: any) => b.id);
+    type BookingRow = { id: string; service_id?: string | null };
+    const bookingIds = ((bookings || []) as BookingRow[]).map((b) => b.id);
     if (bookingIds.length) {
       const { data: reviewsRows } = await supabase
         .from('reviews')
@@ -88,8 +97,9 @@ export default async function ServicesSearchPage({ searchParams }: { searchParam
         `)
         .in('booking_id', bookingIds);
       const agg: Record<string, number[]> = {};
-      (reviewsRows || []).forEach((r: any) => {
-        const sid = r.booking?.service_id;
+      type JoinedReviewRow = { rating: number; booking?: { service_id?: string | null } };
+      ((reviewsRows || []) as JoinedReviewRow[]).forEach((r) => {
+        const sid = r.booking?.service_id || undefined;
         const val = Number(r.rating);
         if (sid && !isNaN(val)) {
           if (!agg[sid]) agg[sid] = [];
@@ -104,7 +114,7 @@ export default async function ServicesSearchPage({ searchParams }: { searchParam
     }
   }
 
-  const servicesWithRatings = filtered.map((s: any) => ({
+  const servicesWithRatings = filtered.map((s) => ({
     ...s,
     rating_avg: serviceRatingMap[s.id]?.avg ?? undefined,
     reviews_count_service: serviceRatingMap[s.id]?.count ?? undefined

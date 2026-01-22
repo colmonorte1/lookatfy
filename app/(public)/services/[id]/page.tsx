@@ -23,6 +23,8 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
             *,
             expert:experts (
                 *,
+                languages,
+                skills,
                 profile:profiles (
                     full_name,
                     avatar_url
@@ -60,9 +62,18 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
         .order('created_at', { ascending: false })
         .limit(50);
 
-    const bookingIds = (bookingsForService || []).map((b: { id: string }) => b.id);
+    type BookingIdRow = { id: string };
+    const bookingIds = ((bookingsForService || []) as BookingIdRow[]).map((b) => b.id);
 
-    let reviews: any[] = [];
+    type ReviewRow = {
+        id: string;
+        rating: number;
+        comment?: string | null;
+        created_at: string;
+        reviewer?: { full_name?: string | null; avatar_url?: string | null } | null;
+        subject?: { role?: string | null } | null;
+    };
+    let reviews: ReviewRow[] = [];
     if (bookingIds.length > 0) {
         try {
             const { data: reviewsData } = await supabase
@@ -76,7 +87,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
                 .eq('subject.role', 'expert')
                 .order('created_at', { ascending: false })
                 .limit(5);
-            reviews = reviewsData || [];
+            reviews = (reviewsData || []) as ReviewRow[];
         } catch {
             const { data: reviewsAll } = await supabase
                 .from('reviews')
@@ -88,7 +99,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
                 .in('booking_id', bookingIds)
                 .order('created_at', { ascending: false })
                 .limit(10);
-            reviews = (reviewsAll || []).filter((r: any) => r.subject?.role === 'expert').slice(0, 5);
+            reviews = (((reviewsAll || []) as ReviewRow[]).filter((r) => r.subject?.role === 'expert')).slice(0, 5);
         }
     }
 
@@ -101,7 +112,8 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
             .from('reviews')
             .select('rating')
             .eq('subject_id', service.expert_id);
-        const ratings = (expertRatings || []).map((r: any) => Number(r.rating)).filter((n) => !isNaN(n));
+        type ExpertRatingRow = { rating?: number | string | null };
+        const ratings = (((expertRatings || []) as ExpertRatingRow[]).map((r) => Number(r.rating))).filter((n) => !isNaN(n));
         expertCount = ratings.length;
         expertAvg = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length) : 5.0;
     } catch {}
@@ -112,7 +124,9 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
         avatar_url: service.expert.profile?.avatar_url,
         rating_avg: Number(expertAvg.toFixed(1)),
         reviews_total: expertCount,
-        verified: service.expert.verified
+        verified: service.expert.verified,
+        languages: Array.isArray((service.expert as any).languages) ? (service.expert as any).languages : [],
+        skills: Array.isArray((service.expert as any).skills) ? (service.expert as any).skills : []
     } : {};
 
     return <ServiceDetailClient service={service} expert={expertData} reviews={reviews} />;

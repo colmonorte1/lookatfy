@@ -19,8 +19,8 @@ export default async function ExpertEarningsPage() {
             status,
             price,
             created_at,
-            services ( title ),
-            profiles:user_id ( full_name )
+            service:services(title),
+            client:profiles!user_id(full_name)
         `)
         .eq('expert_id', user.id)
         .in('status', ['confirmed', 'completed'])
@@ -158,9 +158,11 @@ export default async function ExpertEarningsPage() {
 
                     {/* Rows */}
                     {allBookings.length > 0 ? (
-                        allBookings.map((tx: { id: string; date: string; status: string; price: number | string; services?: { title?: string }; profiles?: { full_name?: string } }) => {
-                            const clientName = tx.profiles?.full_name || 'Cliente';
-                            const serviceName = tx.services?.title || 'Servicio';
+                        allBookings.map((tx: { id: string; date: string; status: string; price: number | string; service?: { title?: string } | { title?: string }[]; client?: { full_name?: string } | { full_name?: string }[] }) => {
+                            const clientObj = Array.isArray(tx.client) ? tx.client[0] : tx.client;
+                            const serviceObj = Array.isArray(tx.service) ? tx.service[0] : tx.service;
+                            const clientName = clientObj?.full_name || 'Cliente';
+                            const serviceName = serviceObj?.title || 'Servicio';
                             const dateStr = new Date(tx.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 
                             const isCompleted = tx.status === 'completed';

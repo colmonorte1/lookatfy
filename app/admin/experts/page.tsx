@@ -4,6 +4,13 @@ import { Plus, CheckCircle, XCircle } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
 import { ExpertActions } from '@/components/admin/ExpertActions';
 
+interface ExpertRow {
+    id: string;
+    title?: string | null;
+    verified: boolean;
+    profiles?: { full_name?: string | null; email?: string | null } | null;
+}
+
 export default async function AdminExpertsPage() {
     const supabase = await createClient();
 
@@ -54,9 +61,8 @@ export default async function AdminExpertsPage() {
                         </tr>
                     </thead>
                     <tbody>
-                        {expertList.map((expert: any) => {
-                            // Type guard/check for joined data
-                            const profile = expert.profiles as any;
+                        {expertList.map((expert: ExpertRow) => {
+                            const profile = expert.profiles || {};
                             const fullName = profile?.full_name || 'Sin Nombre';
                             const email = profile?.email || 'No email';
 

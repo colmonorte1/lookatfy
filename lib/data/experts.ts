@@ -9,6 +9,8 @@ export interface Expert {
     tags: string[];
     bio: string;
     isOnline: boolean;
+    languages?: Array<{ name: string; level: string }>;
+    skills?: Array<{ name: string; level: string }>;
 }
 
 export const EXPERTS: Expert[] = [

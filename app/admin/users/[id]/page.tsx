@@ -159,7 +159,7 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
                         ) : (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                                 <tbody>
-                                    {userBookings.map((booking: any) => (
+                                    {userBookings.map((booking: { id: string; date?: string; time?: string; status: string; service?: { title?: string | null } | null; expert?: { profile?: { full_name?: string | null } | null } | null }) => (
                                         <tr key={booking.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
                                             <td style={{ padding: '1rem' }}>
                                                 <div style={{ fontWeight: 600 }}>{booking.service?.title || 'Servicio Eliminado'}</div>

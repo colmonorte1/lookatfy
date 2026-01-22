@@ -25,6 +25,8 @@ interface Expert {
     city?: string;
     country?: string;
     phone?: string;
+    languages?: Array<{ name: string; level: string }>;
+    skills?: Array<{ name: string; level: string }>;
 }
 
 interface ProfileFormProps {
@@ -43,7 +45,6 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
         last_name: string;
         title: string;
         bio: string;
-        price: string;
         city: string;
         country: string;
         phone: string;
@@ -55,12 +56,17 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
         last_name: user?.last_name || '',
         title: expert?.title || '',
         bio: expert?.bio || '',
-        price: (expert?.consultation_price ?? '').toString(),
         city: expert?.city || '',
         country: expert?.country || '',
         phone: expert?.phone || '',
         email: user?.email || '',
     });
+
+    type BudgetItem = { name: string; level: string };
+    const [languages, setLanguages] = useState<BudgetItem[]>(Array.isArray(expert?.languages) ? expert!.languages! : []);
+    const [skills, setSkills] = useState<BudgetItem[]>(Array.isArray(expert?.skills) ? expert!.skills! : []);
+    const [newLanguage, setNewLanguage] = useState<BudgetItem>({ name: '', level: 'B1' });
+    const [newSkill, setNewSkill] = useState<BudgetItem>({ name: '', level: 'Intermediate' });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -72,6 +78,12 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
             setUploading(true);
             if (!event.target.files || event.target.files.length === 0) {
                 return; // User cancelled or no file
+            }
+
+            if (!user) {
+                alert('No autenticado');
+                setUploading(false);
+                return;
             }
 
             const file = event.target.files[0];
@@ -125,6 +137,7 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
 
         try {
             const supabase = createClient();
+            if (!user) { throw new Error('No autenticado'); }
             const fullName = `${formData.first_name} ${formData.last_name}`.trim();
 
             // 1. Update Profile
@@ -147,10 +160,11 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
                     id: user.id, // Required for upsert
                     title: formData.title,
                     bio: formData.bio,
-                    consultation_price: formData.price ? parseFloat(formData.price) : 0,
                     city: formData.city,
                     country: formData.country,
-                    phone: formData.phone
+                    phone: formData.phone,
+                    languages,
+                    skills
                 });
 
             if (expertError) throw expertError as unknown;
@@ -288,7 +302,7 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
                         />
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
                             <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Teléfono</label>
                             <Input
@@ -298,15 +312,97 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
                                 placeholder="+123 456 789"
                             />
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                            <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Precio Base ($)</label>
+                    </div>
+
+                    <div style={{ height: '1px', background: 'rgb(var(--border))', width: '100%' }} />
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Idiomas</h3>
+                        <p style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Agrega los idiomas que dominas y tu nivel.</p>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                             <Input
-                                name="price"
-                                type="number"
-                                value={formData.price}
-                                onChange={handleChange}
-                                placeholder="0.00"
+                                name="language_name"
+                                value={newLanguage.name}
+                                onChange={(e) => setNewLanguage({ ...newLanguage, name: e.target.value })}
+                                placeholder="Ej. Inglés"
                             />
+                            <select
+                                value={newLanguage.level}
+                                onChange={(e) => setNewLanguage({ ...newLanguage, level: e.target.value })}
+                                style={{ padding: '0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--background))' }}
+                                aria-label="Nivel de idioma"
+                            >
+                                <option value="A1">A1</option>
+                                <option value="A2">A2</option>
+                                <option value="B1">B1</option>
+                                <option value="B2">B2</option>
+                                <option value="C1">C1</option>
+                                <option value="C2">C2</option>
+                            </select>
+                            <Button type="button" onClick={() => {
+                                const n = newLanguage.name.trim();
+                                if (!n) return;
+                                setLanguages((prev) => [...prev, { name: n, level: newLanguage.level }]);
+                                setNewLanguage({ name: '', level: 'B1' });
+                            }}>Añadir</Button>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {languages.length === 0 && (
+                                <span style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Sin idiomas añadidos.</span>
+                            )}
+                            {languages.map((lang, idx) => (
+                                <div key={`${lang.name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgb(var(--border))', borderRadius: 'var(--radius-md)', padding: '0.5rem 0.75rem' }}>
+                                    <span>{lang.name} • {lang.level}</span>
+                                    <Button type="button" onClick={() => {
+                                        setLanguages((prev) => prev.filter((_, i) => i !== idx));
+                                    }}>Eliminar</Button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div style={{ height: '1px', background: 'rgb(var(--border))', width: '100%' }} />
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Skills</h3>
+                        <p style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Agrega tus habilidades y nivel.</p>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                            <Input
+                                name="skill_name"
+                                value={newSkill.name}
+                                onChange={(e) => setNewSkill({ ...newSkill, name: e.target.value })}
+                                placeholder="Ej. Litigación"
+                            />
+                            <select
+                                value={newSkill.level}
+                                onChange={(e) => setNewSkill({ ...newSkill, level: e.target.value })}
+                                style={{ padding: '0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--background))' }}
+                                aria-label="Nivel de habilidad"
+                            >
+                                <option value="Beginner">Beginner</option>
+                                <option value="Intermediate">Intermediate</option>
+                                <option value="Advanced">Advanced</option>
+                                <option value="Expert">Expert</option>
+                            </select>
+                            <Button type="button" onClick={() => {
+                                const n = newSkill.name.trim();
+                                if (!n) return;
+                                setSkills((prev) => [...prev, { name: n, level: newSkill.level }]);
+                                setNewSkill({ name: '', level: 'Intermediate' });
+                            }}>Añadir</Button>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {skills.length === 0 && (
+                                <span style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Sin skills añadidos.</span>
+                            )}
+                            {skills.map((sk, idx) => (
+                                <div key={`${sk.name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgb(var(--border))', borderRadius: 'var(--radius-md)', padding: '0.5rem 0.75rem' }}>
+                                    <span>{sk.name} • {sk.level}</span>
+                                    <Button type="button" onClick={() => {
+                                        setSkills((prev) => prev.filter((_, i) => i !== idx));
+                                    }}>Eliminar</Button>
+                                </div>
+                            ))}
                         </div>
                     </div>
 

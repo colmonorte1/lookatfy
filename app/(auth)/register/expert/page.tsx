@@ -61,8 +61,9 @@ export default function ExpertRegisterPage() {
 
             router.push('/expert/profile');
 
-        } catch (err: any) {
-            setError(err.message || 'Error al registrarse');
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setError(msg || 'Error al registrarse');
         } finally {
             setIsLoading(false);
         }

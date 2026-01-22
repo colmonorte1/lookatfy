@@ -46,12 +46,18 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
             .from('reviews')
             .select('rating')
             .eq('subject_id', id);
-        const nums = (ratingsData || []).map((r: any) => Number(r.rating)).filter((n) => !isNaN(n));
+        type ReviewRatingRow = { rating?: number | string | null };
+        const nums = (ratingsData || []).map((r: ReviewRatingRow) => Number(r.rating)).filter((n) => !isNaN(n));
         reviewsCount = nums.length;
         rating = nums.length ? Number((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(1)) : 5.0;
     } catch {}
     const city = expertRow.profile?.city || '';
     const country = expertRow.profile?.country || '';
+    type LangSkill = { name: string; level: string };
+    const rawLanguages = (expertRow as { languages?: unknown }).languages;
+    const rawSkills = (expertRow as { skills?: unknown }).skills;
+    const languages: LangSkill[] = Array.isArray(rawLanguages) ? (rawLanguages as LangSkill[]) : [];
+    const skills: LangSkill[] = Array.isArray(rawSkills) ? (rawSkills as LangSkill[]) : [];
     const services: ServiceRow[] = Array.isArray(expertRow.services)
         ? (expertRow.services as ServiceRow[]).filter((s) => s.status !== 'deleted')
         : [];
@@ -64,14 +70,15 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
     );
 
     // Compute per-service rating averages for this expert's services
-    let serviceRatingMap: Record<string, { avg: number; count: number }> = {};
+    const serviceRatingMap: Record<string, { avg: number; count: number }> = {};
     if (services.length) {
         const serviceIds = services.map((s) => s.id);
         const { data: bookings } = await supabase
             .from('bookings')
             .select('id, service_id')
             .in('service_id', serviceIds);
-        const bookingIds = (bookings || []).map((b: any) => b.id);
+        type BookingRow = { id: string };
+        const bookingIds = (bookings || []).map((b: BookingRow) => b.id);
         if (bookingIds.length) {
             const { data: reviewsRows } = await supabase
                 .from('reviews')
@@ -81,7 +88,8 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                 `)
                 .in('booking_id', bookingIds);
             const agg: Record<string, number[]> = {};
-            (reviewsRows || []).forEach((r: any) => {
+            type JoinedReviewRow = { rating?: number | string | null; booking?: { service_id?: string } };
+            (reviewsRows || []).forEach((r: JoinedReviewRow) => {
                 const sid = r.booking?.service_id;
                 const val = Number(r.rating);
                 if (sid && !isNaN(val)) {
@@ -110,7 +118,14 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
         .order('created_at', { ascending: false })
         .limit(6);
 
-    const reviews = (reviewsData || []).map((r: any) => ({
+    type ReviewRow = {
+        id: string;
+        rating?: number | string | null;
+        comment?: string | null;
+        created_at: string;
+        reviewer?: { full_name?: string | null; avatar_url?: string | null } | null;
+    };
+    const reviews = (reviewsData || []).map((r: ReviewRow) => ({
         id: r.id,
         author: r.reviewer?.full_name || 'Usuario',
         avatar: r.reviewer?.avatar_url || undefined,
@@ -151,6 +166,8 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                             </div>
                         </div>
                     </div>
+
+                    
 
                     <div style={{ width: '100%', height: '1px', background: 'rgb(var(--border))' }} />
 
@@ -236,24 +253,110 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                         </p>
                     </section>
 
-                    {/* Skills */}
-                    <section>
-                        <h3 style={{ marginBottom: '1rem', fontSize: '1.25rem' }}>Especialidades</h3>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                            {categories.map(tag => (
-                                <span key={tag} style={{
-                                    background: 'rgb(var(--surface-hover))',
-                                    padding: '0.5rem 1rem',
-                                    borderRadius: '2rem',
-                                    fontSize: '0.9rem',
-                                    fontWeight: 500,
-                                    color: 'rgb(var(--text-main))'
+                    {(languages.length > 0 || skills.length > 0) && (
+                        <section>
+                            {languages.length > 0 && (
+                                <div style={{
+                                    background: 'rgb(var(--surface))',
+                                    border: '1px solid rgb(var(--border))',
+                                    borderRadius: 'var(--radius-lg)',
+                                    padding: '1rem 1.25rem',
+                                    boxShadow: 'var(--shadow-md)',
+                                    marginBottom: '1rem'
                                 }}>
-                                    {tag}
-                                </span>
-                            ))}
-                        </div>
-                    </section>
+                                    <h3 style={{ marginBottom: '0.75rem', fontSize: '1.25rem', fontWeight: 700 }}>Idiomas</h3>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }} aria-label="Idiomas">
+                                        {languages.map((l, idx) => (
+                                            <div key={`${l.name}-${idx}`} style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                background: 'rgb(var(--surface-hover))',
+                                                border: '1px solid rgb(var(--border))',
+                                                borderRadius: '2rem',
+                                                padding: '0.5rem 0.75rem'
+                                            }}>
+                                                <span style={{ fontWeight: 600 }}>{l.name}</span>
+                                                <span style={{
+                                                    fontSize: '0.8rem',
+                                                    background: 'rgb(var(--surface))',
+                                                    border: '1px solid rgb(var(--border))',
+                                                    borderRadius: '1rem',
+                                                    padding: '0.2rem 0.5rem',
+                                                    color: 'rgb(var(--text-secondary))'
+                                                }}>{l.level}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {skills.length > 0 && (
+                                <div style={{
+                                    background: 'rgb(var(--surface))',
+                                    border: '1px solid rgb(var(--border))',
+                                    borderRadius: 'var(--radius-lg)',
+                                    padding: '1rem 1.25rem',
+                                    boxShadow: 'var(--shadow-md)'
+                                }}>
+                                    <h3 style={{ marginBottom: '0.75rem', fontSize: '1.25rem', fontWeight: 700 }}>Skills</h3>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }} aria-label="Skills">
+                                        {skills.map((s, idx) => (
+                                            <div key={`${s.name}-${idx}`} style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                background: 'rgb(var(--surface-hover))',
+                                                border: '1px solid rgb(var(--border))',
+                                                borderRadius: '2rem',
+                                                padding: '0.5rem 0.75rem'
+                                            }}>
+                                                <span style={{ fontWeight: 600 }}>{s.name}</span>
+                                                <span style={{
+                                                    fontSize: '0.8rem',
+                                                    background: 'rgb(var(--surface))',
+                                                    border: '1px solid rgb(var(--border))',
+                                                    borderRadius: '1rem',
+                                                    padding: '0.2rem 0.5rem',
+                                                    color: 'rgb(var(--text-secondary))'
+                                                }}>{s.level}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+                    )}
+
+                    {/* Especialidades budgets */}
+                    {categories.length > 0 && (
+                        <section>
+                            <div style={{
+                                background: 'rgb(var(--surface))',
+                                border: '1px solid rgb(var(--border))',
+                                borderRadius: 'var(--radius-lg)',
+                                padding: '1rem 1.25rem',
+                                boxShadow: 'var(--shadow-md)'
+                            }}>
+                                <h3 style={{ marginBottom: '0.75rem', fontSize: '1.25rem', fontWeight: 700 }}>Especialidades</h3>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }} aria-label="Especialidades">
+                                    {categories.map(tag => (
+                                        <div key={tag} style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            background: 'rgb(var(--surface-hover))',
+                                            border: '1px solid rgb(var(--border))',
+                                            borderRadius: '2rem',
+                                            padding: '0.5rem 0.75rem'
+                                        }}>
+                                            <span style={{ fontWeight: 600 }}>{tag}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </section>
+                    )}
 
                     <div style={{ width: '100%', height: '1px', background: 'rgb(var(--border))' }} />
 
