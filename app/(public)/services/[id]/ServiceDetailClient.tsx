@@ -11,6 +11,7 @@ import { BookingCalendar } from '@/components/ui/Calendar/BookingCalendar';
 interface ServiceDetailProps {
     service: {
         id: string;
+        category?: string | null;
         title?: string;
         price?: number | string;
         currency?: string;
@@ -38,6 +39,7 @@ interface ServiceDetailProps {
         name?: string | null;
         languages?: Array<{ name: string; level: string }>;
         skills?: Array<{ name: string; level: string }>;
+        timezone?: string | null;
     };
     reviews?: {
         id: string;
@@ -61,7 +63,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
         author: r.reviewer?.full_name || 'Usuario',
         rating: r.rating,
         date: new Date(r.created_at).toLocaleDateString(),
-        comment: r.comment
+        comment: r.comment ? String(r.comment) : ''
     }));
     const serviceAvg = formattedReviews.length ? Number((formattedReviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / formattedReviews.length).toFixed(1)) : 5.0;
     const reqText = service.requirements || '';
@@ -81,17 +83,16 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
         if (selectedDate) dateObj.setDate(selectedDate);
         const formattedDate = dateObj.toISOString().split('T')[0];
 
-        const params = new URLSearchParams({
-            title: service.title || '',
-            expert: expert.name || expert.full_name || 'Experto',
-            price: service.price.toString(),
-            date: formattedDate,
-            time: selectedTime,
-            currency: service.currency || 'USD',
-            image: service.image_url || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1200&q=80', // Fallback image if none
-            serviceId: service.id,
-            expertId: service.expert_id
-        });
+        const params = new URLSearchParams();
+        params.set('title', service.title || '');
+        params.set('expert', expert.name || expert.full_name || 'Experto');
+        params.set('price', String(service.price ?? ''));
+        params.set('date', formattedDate);
+        params.set('time', selectedTime);
+        params.set('currency', service.currency || 'USD');
+        params.set('image', service.image_url || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1200&q=80');
+        params.set('serviceId', String(service.id));
+        params.set('expertId', String(service.expert_id ?? ''));
 
         router.push(`/checkout?${params.toString()}`);
     };
@@ -344,8 +345,9 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                 isOpen={isCalendarOpen}
                 onClose={() => setIsCalendarOpen(false)}
                 onSelectDate={handleDateSelect}
-                expertId={service.expert_id}
-                serviceDuration={service.duration}
+                expertId={String(service.expert_id || '')}
+                serviceDuration={Number(service.duration ?? 60)}
+                expertTimezone={expert.timezone || undefined}
             />
         </main>
     );

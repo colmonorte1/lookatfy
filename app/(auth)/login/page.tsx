@@ -15,6 +15,18 @@ export default function LoginPage() {
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
 
+    const scorePassword = (p: string) => {
+        let s = 0;
+        if (p.length >= 8) s++;
+        if (/[A-Z]/.test(p)) s++;
+        if (/[0-9]/.test(p)) s++;
+        if (/[^A-Za-z0-9]/.test(p)) s++;
+        return s;
+    };
+    const strength = scorePassword(password);
+    const strengthLabel = strength <= 1 ? 'Débil' : strength === 2 ? 'Media' : strength === 3 ? 'Buena' : 'Alta';
+    const strengthColor = strength <= 1 ? 'rgb(var(--error))' : strength === 2 ? 'rgb(var(--warning))' : strength === 3 ? 'rgb(var(--primary))' : 'rgb(var(--success))';
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
@@ -28,8 +40,12 @@ export default function LoginPage() {
             });
 
             if (error) {
-                console.error("Login error from supabase:", error);
-                throw error;
+                const msg = String(error?.message || 'Error al iniciar sesión');
+                const friendly = msg.toLowerCase().includes('invalid login credentials')
+                    ? 'Credenciales inválidas. Verifica tu correo y contraseña.'
+                    : msg;
+                setError(friendly);
+                return;
             }
 
             // Check session
@@ -58,7 +74,10 @@ export default function LoginPage() {
 
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            setError(msg || 'Error al iniciar sesión');
+            const friendly = msg.toLowerCase().includes('invalid login credentials')
+                ? 'Credenciales inválidas. Verifica tu correo y contraseña.'
+                : msg;
+            setError(friendly || 'Error al iniciar sesión');
         } finally {
             setIsLoading(false);
         }
@@ -106,6 +125,12 @@ export default function LoginPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                     />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{ height: '8px', background: 'rgb(var(--border))', borderRadius: '999px', width: '120px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${(strength/4)*100}%`, background: strengthColor }} />
+                        </div>
+                        <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>Fortaleza: {strengthLabel}</span>
+                    </div>
                     <div style={{ textAlign: 'right' }}>
                         <Link
                             href="/forgot-password"

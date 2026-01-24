@@ -6,6 +6,7 @@ import { XCircle, Video as VideoIcon } from 'lucide-react';
 import { cancelBooking } from '@/app/user/actions';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
+import { toISOTimeInTZ, fromUTC } from '@/utils/timezone';
 
 interface BookingActionsProps {
     bookingId: string;
@@ -16,9 +17,12 @@ interface BookingActionsProps {
     time: string;
     duration?: number;
     dispute?: { id: string; status: string } | null;
+    startAt?: string;
+    expertTimezone?: string | null;
+    userTimezone?: string | null;
 }
 
-export function BookingActions({ bookingId, status, meetingUrl, userName, date, time, duration, dispute }: BookingActionsProps) {
+export function BookingActions({ bookingId, status, meetingUrl, userName, date, time, duration, dispute, startAt, expertTimezone, userTimezone }: BookingActionsProps) {
     const [loading, setLoading] = useState(false);
     const [cancelModalOpen, setCancelModalOpen] = useState(false);
     const [cancelReason, setCancelReason] = useState('');
@@ -34,6 +38,7 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
     // DateTime Parsing Logic
     const getMeetingDateTime = () => {
         try {
+            if (startAt) return new Date(startAt);
             const dateTimeStr = `${date} ${time}`;
             return new Date(dateTimeStr);
         } catch {
@@ -174,6 +179,14 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                     {status === 'completed' ? 'Completada' : 'Cancelada'}
                 </Button>
 
+                {status === 'completed' && !hasReview && (
+                    <div style={{ marginTop: '0.25rem' }}>
+                        <Link href={`/call/feedback/${bookingId}`} style={{ width: '100%' }}>
+                            <Button fullWidth variant="outline">Calificar experiencia</Button>
+                        </Link>
+                    </div>
+                )}
+
                 <Button
                     variant="ghost"
                     fullWidth
@@ -273,7 +286,14 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                                 <VideoIcon size={16} /> Unirse ahora
                             </Button>
                             <span style={{ fontSize: '0.75rem', color: 'rgb(var(--text-secondary))', display: 'block', marginTop: '0.25rem' }}>
-                                Habilitado 1h antes ({date} {time})
+                                {(() => {
+                                    const userTz = userTimezone || (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+                                    const expTz = expertTimezone || 'UTC';
+                                    if (!meetingDate) return `Habilitado 1h antes (${date} ${time})`;
+                                    const userLabel = toISOTimeInTZ(meetingDate, userTz);
+                                    const expertLabel = toISOTimeInTZ(meetingDate, expTz);
+                                    return `Habilitado 1h antes (Tu hora ${userLabel} • Experto ${expertLabel})`;
+                                })()}
                             </span>
                         </div>
                     )}

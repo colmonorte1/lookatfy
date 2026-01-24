@@ -158,7 +158,15 @@ export default async function UserBookingsPage({ searchParams }: { searchParams:
                                         time={booking.time}
                                         duration={booking.service?.duration}
                                         dispute={dispute}
+                                        startAt={booking.start_at}
+                                        expertTimezone={(booking as any).expert_timezone || null}
+                                        userTimezone={(booking as any).user_timezone || null}
                                     />
+                                    <div>
+                                        <Link href={`/api/bookings/${booking.id}/ics`} target="_blank">
+                                            <Button variant="outline" size="sm">Descargar .ics</Button>
+                                        </Link>
+                                    </div>
                                 </div>
                             </div>
                         );

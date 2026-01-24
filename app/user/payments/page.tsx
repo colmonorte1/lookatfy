@@ -23,6 +23,17 @@ export default async function UserPaymentsPage() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
+    const bookingIds = (bookings || []).map((b: { id: string }) => b.id);
+    let refundedSet = new Set<string>();
+    if (bookingIds.length) {
+        const { data: ds } = await supabase
+            .from('disputes')
+            .select('booking_id, status')
+            .in('booking_id', bookingIds)
+            .eq('status', 'resolved_refunded');
+        refundedSet = new Set(((ds || []) as { booking_id: string }[]).map(d => d.booking_id));
+    }
+
     return (
         <div>
             <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>Historial de Pagos</h1>
@@ -65,7 +76,11 @@ export default async function UserPaymentsPage() {
                                     let statusLabel = 'Pendiente';
                                     let statusStyle = { bg: 'rgba(var(--warning), 0.1)', color: 'rgb(var(--warning))' };
 
-                                    if (booking.status === 'confirmed' || booking.status === 'completed') {
+                                    const isRefunded = refundedSet.has(booking.id);
+                                    if (isRefunded) {
+                                        statusLabel = 'Devolución por disputa';
+                                        statusStyle = { bg: 'rgba(var(--error), 0.1)', color: 'rgb(var(--error))' };
+                                    } else if (booking.status === 'confirmed' || booking.status === 'completed') {
                                         statusLabel = 'Pagado';
                                         statusStyle = { bg: 'rgba(var(--success), 0.1)', color: 'rgb(var(--success))' };
                                     } else if (booking.status === 'cancelled') {
@@ -109,7 +124,7 @@ export default async function UserPaymentsPage() {
                                                     variant="ghost"
                                                     size="sm"
                                                     style={{ color: 'rgb(var(--primary))' }}
-                                                    disabled={booking.status === 'cancelled'}
+                                                    disabled={booking.status === 'cancelled' || isRefunded}
                                                     title="Descargar Factura"
                                                 >
                                                     <Download size={18} />

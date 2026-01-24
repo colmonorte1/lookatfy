@@ -1,6 +1,8 @@
 'use server';
 
 import { createClient } from '@/utils/supabase/server';
+import { fromUTC, toISODateInTZ } from '@/utils/timezone';
+import { getCachedAvailability, setCachedAvailability } from './availabilityCache';
 
 export type DayAvailability = {
     date: string; // ISO date YYYY-MM-DD
@@ -11,6 +13,9 @@ export type DayAvailability = {
 export async function getExpertAvailability(expertId: string, year: number, month: number, serviceDuration: number): Promise<DayAvailability[]> {
     const supabase = await createClient();
 
+    const cached = getCachedAvailability(expertId, year, month, serviceDuration);
+    if (cached) return cached;
+
     // 1. Get Weekly Schedule
     const { data: schedule } = await supabase
         .from('expert_availability')
@@ -18,9 +23,17 @@ export async function getExpertAvailability(expertId: string, year: number, mont
         .eq('expert_id', expertId)
         .eq('is_active', true);
 
-    // 2. Get Exceptions for the month
-    // Construct date range for query
-    const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+    // Expert timezone
+    const { data: expertRow } = await supabase
+        .from('experts')
+        .select('timezone')
+        .eq('id', expertId)
+        .single();
+    const expertTz: string = expertRow?.timezone || 'UTC';
+
+    // 2. Get Exceptions for the month (DATE naive, compare contra fecha en tz experto)
+    // Construct date range using month boundaries
+    const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
 
     const { data: exceptions } = await supabase
@@ -64,9 +77,11 @@ export async function getExpertAvailability(expertId: string, year: number, mont
     };
 
     for (let d = 1; d <= daysInMonth; d++) {
-        const currentRef = new Date(year, month, d);
-        const dayOfWeek = currentRef.getDay(); // 0 = Sun
-        const dateStr = currentRef.toISOString().split('T')[0];
+        // Usar mediodía UTC para evitar transiciones DST a medianoche
+        const utcMidday = new Date(Date.UTC(year, month, d, 12, 0, 0));
+        const zoned = fromUTC(utcMidday, expertTz);
+        const dayOfWeek = zoned.getDay(); // 0 = Sun en tz experto
+        const dateStr = toISODateInTZ(utcMidday, expertTz);
 
         // Check availability rule for this day of week
         const rule = schedule?.find(s => s.day_of_week === dayOfWeek);
@@ -93,5 +108,6 @@ export async function getExpertAvailability(expertId: string, year: number, mont
         results.push({ date: dateStr, status, slots: availableSlots });
     }
 
+    setCachedAvailability(expertId, year, month, serviceDuration, results);
     return results;
 }

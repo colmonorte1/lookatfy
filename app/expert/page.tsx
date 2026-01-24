@@ -50,7 +50,8 @@ const KPICard = ({ title, value, subtext, icon: Icon, color }: KPICardProps) => 
     </div>
 );
 
-export default async function ExpertDashboardPage() {
+export default async function ExpertDashboardPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+    const { from, to } = await searchParams;
     const supabase = await createClient();
 
     // 1. Get Current User
@@ -64,6 +65,10 @@ export default async function ExpertDashboardPage() {
     const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single();
     const { data: expert } = await supabase.from('experts').select('rating, reviews_count').eq('id', user.id).single();
     const { count: servicesCount } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('expert_id', user.id).eq('status', 'active');
+    const { data: settingsData } = await supabase
+        .from('platform_settings')
+        .select('commission_percentage')
+        .single();
 
     // 3. Fetch Bookings (All for stats)
     // We need:
@@ -74,7 +79,6 @@ export default async function ExpertDashboardPage() {
     // Parallelize queries for efficiency? Or one big query?
     // Let's get "Active" bookings for upcoming
     const today = new Date().toISOString().split('T')[0];
-    const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
     const { data: upcomingBookings } = await supabase
         .from('bookings')
@@ -98,15 +102,32 @@ export default async function ExpertDashboardPage() {
 
     // --- Calculations ---
 
-    // 1. Revenue This Month
-    const currentMonthRevenue = allBookings
-        ?.filter(b => b.status === 'completed' && b.date >= firstDayOfMonth)
+    // 1. Revenue (Month or Custom Range)
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    const fromValid = from && !isNaN(new Date(String(from)).getTime());
+    const toValid = to && !isNaN(new Date(String(to)).getTime());
+    const hasRange = Boolean(fromValid && toValid);
+
+    const rangeStart = hasRange ? new Date(String(from)) : monthStart;
+    const toDate = hasRange ? new Date(String(to)) : monthEnd;
+    const rangeEnd = hasRange ? new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate() + 1) : monthEnd; // inclusive end-day
+
+    const rangeRevenue = allBookings
+        ?.filter(b => {
+            if (b.status !== 'completed') return false;
+            const d = new Date(String(b.date));
+            return !isNaN(d.getTime()) && d >= rangeStart && d < rangeEnd;
+        })
         .reduce((sum, b) => sum + (Number(b.price) || 0), 0) || 0;
 
+    const commissionRate = (Number(settingsData?.commission_percentage) || 10) / 100;
+    const netRangeRevenue = Math.max(0, rangeRevenue * (1 - commissionRate));
+
     // 2. Upcoming Count
-    const upcomingCount = allBookings
-        ?.filter(b => b.status === 'confirmed' && b.date >= today)
-        .length || 0;
+    const upcomingCount = (upcomingBookings?.length || 0);
 
     // 3. Total Hours (Completed)
     // Duration is in services table mostly. Need to rely on join or if we fetch services.
@@ -125,7 +146,7 @@ export default async function ExpertDashboardPage() {
     const firstName = profile?.full_name?.split(' ')[0] || 'Experto';
 
     return (
-        <div className="container" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '2rem', padding: '2rem 1rem 4rem' }}>
+        <div className="container" style={{ display: 'grid', gap: '2rem', padding: '2rem 1rem 4rem' }}>
             <div>
                 <ExpertSidebar />
             </div>
@@ -142,8 +163,17 @@ export default async function ExpertDashboardPage() {
                     <h1 style={{ fontSize: '2rem' }}>Hola, {firstName} 👋</h1>
                     <p style={{ color: 'rgb(var(--text-secondary))' }}>Resumen de tu actividad</p>
                 </div>
+                <form method="get" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '1rem' }} aria-label="Filtro por rango de fechas">
+                    <label htmlFor="from" style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Desde</label>
+                    <input id="from" name="from" type="date" defaultValue={fromValid ? String(from) : ''} style={{ padding: '0.5rem', border: '1px solid rgb(var(--border))', borderRadius: '6px', background: 'rgb(var(--surface))' }} />
+                    <label htmlFor="to" style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Hasta</label>
+                    <input id="to" name="to" type="date" defaultValue={toValid ? String(to) : ''} style={{ padding: '0.5rem', border: '1px solid rgb(var(--border))', borderRadius: '6px', background: 'rgb(var(--surface))' }} />
+                    <button type="submit" style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid rgb(var(--border))', background: 'rgb(var(--primary))', color: '#fff', fontWeight: 600 }}>Aplicar</button>
+                    <Link href="/expert" style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid rgb(var(--border))', color: 'rgb(var(--text-secondary))' }}>Limpiar</Link>
+                </form>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-                    <KPICard title="Ingresos este mes" value={`$${currentMonthRevenue.toFixed(2)}`} subtext="Reservas completadas" icon={DollarSign} color="success" />
+                    <KPICard title={hasRange ? "Ingresos (rango)" : "Ingresos este mes"} value={`$${rangeRevenue.toFixed(2)}`} subtext={hasRange ? "Reservas completadas en rango" : "Reservas completadas"} icon={DollarSign} color="success" />
+                    <KPICard title={hasRange ? "Ingresos netos (rango)" : "Ingresos netos este mes"} value={`$${netRangeRevenue.toFixed(2)}`} subtext={`Después de comisión (${Math.round(commissionRate*100)}%)`} icon={DollarSign} color="success" />
                     <KPICard title="Próximas Reservas" value={upcomingCount} subtext="Citas confirmadas" icon={Calendar} color="primary" />
                     <KPICard title="Horas Realizadas" value={`${totalHours}h`} subtext="Total acumulado" icon={Clock} color="secondary" />
                     <KPICard title="Calificación" value={expert?.rating || '5.0'} subtext={`Base en ${expert?.reviews_count || 0} reseña(s)`} icon={Star} color="warning" />

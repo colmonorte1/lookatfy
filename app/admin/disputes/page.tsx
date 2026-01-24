@@ -2,7 +2,7 @@ import DisputesClient from './DisputesClient';
 import { createClient } from '@/utils/supabase/server';
 import { createServerClient } from '@supabase/ssr';
 
-type Reporter = { full_name?: string | null; role?: 'client' | 'expert' | 'admin' | null };
+type Reporter = { full_name?: string; role?: 'client' | 'expert' | 'admin' };
 type DisputeRow = {
     id: string;
     created_at: string;
@@ -108,6 +108,7 @@ export default async function DisputesPage() {
 
     const enriched: AdminDispute[] = list.map((d) => ({
         ...d,
+        reporter: d.reporter ? { full_name: d.reporter.full_name || '', role: (d.reporter.role as 'client' | 'expert' | 'admin' | undefined) } : undefined,
         booking: d.booking_id ? bookingMap[d.booking_id] : undefined
     }));
 

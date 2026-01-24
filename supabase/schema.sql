@@ -333,3 +333,107 @@ CREATE POLICY "Auth can insert disputes evidence"
 CREATE POLICY "Auth can update own disputes evidence"
   ON storage.objects FOR UPDATE TO authenticated
   USING (bucket_id = 'disputes-evidence' AND name LIKE (auth.uid()::text || '/%'));
+
+-- 11. Expert Bank Accounts (Added 2026-01-22)
+CREATE TABLE IF NOT EXISTS public.expert_banks (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  expert_id UUID NOT NULL REFERENCES public.experts(id) ON DELETE CASCADE,
+  bank TEXT NOT NULL,
+  account_type TEXT NOT NULL,
+  account_number TEXT NOT NULL,
+  holder_name TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.expert_banks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Experts can view own banks" ON public.expert_banks FOR SELECT USING (auth.uid() = expert_id);
+CREATE POLICY "Experts can manage own banks" ON public.expert_banks FOR ALL USING (auth.uid() = expert_id);
+CREATE POLICY "Admins can view all banks" ON public.expert_banks FOR SELECT USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+CREATE POLICY "Admins can update banks" ON public.expert_banks FOR UPDATE USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+CREATE POLICY "Admins can insert banks" ON public.expert_banks FOR INSERT WITH CHECK ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+CREATE POLICY "Admins can delete banks" ON public.expert_banks FOR DELETE USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+
+-- 12. Recordings (Call Recordings linked to users/bookings)
+CREATE TABLE IF NOT EXISTS public.recordings (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  booking_id UUID REFERENCES public.bookings(id) ON DELETE SET NULL,
+  room_name TEXT,
+  type TEXT CHECK (type IN ('cloud','local','raw-tracks')) DEFAULT 'cloud',
+  status TEXT CHECK (status IN ('pending','running','finished','error')) DEFAULT 'finished',
+  instance_id TEXT,
+  storage_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  ended_at TIMESTAMP WITH TIME ZONE
+);
+
+ALTER TABLE public.recordings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users view own recordings" ON public.recordings FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users insert own recordings" ON public.recordings FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users update own recordings" ON public.recordings FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Admins view all recordings" ON public.recordings FOR SELECT USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+CREATE POLICY "Admins update recordings" ON public.recordings FOR UPDATE USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+CREATE POLICY "Admins delete recordings" ON public.recordings FOR DELETE USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+
+-- 13. Active Countries (for Admin-created services and platform config)
+CREATE TABLE IF NOT EXISTS public.active_countries (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+ALTER TABLE public.active_countries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read countries" ON public.active_countries FOR SELECT USING (true);
+CREATE POLICY "Admins manage countries" ON public.active_countries FOR ALL USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+
+-- 14. Admin Services (Platform-level services)
+CREATE TABLE IF NOT EXISTS public.admin_services (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  price NUMERIC NOT NULL,
+  country_code TEXT REFERENCES public.active_countries(code) ON DELETE SET NULL,
+  active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.admin_services ADD COLUMN IF NOT EXISTS recording_enabled BOOLEAN DEFAULT false;
+
+ALTER TABLE public.admin_services ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read admin services" ON public.admin_services FOR SELECT USING (true);
+CREATE POLICY "Admins manage admin services" ON public.admin_services FOR ALL USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+
+CREATE TABLE IF NOT EXISTS public.booking_addons (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  booking_id UUID NOT NULL REFERENCES public.bookings(id) ON DELETE CASCADE,
+  admin_service_id UUID NOT NULL REFERENCES public.admin_services(id) ON DELETE RESTRICT,
+  price NUMERIC NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.booking_addons ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users view own booking addons" ON public.booking_addons FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.bookings b WHERE b.id = booking_addons.booking_id AND b.user_id = auth.uid()
+  )
+);
+CREATE POLICY "Users insert own booking addons" ON public.booking_addons FOR INSERT WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.bookings b WHERE b.id = booking_addons.booking_id AND b.user_id = auth.uid()
+  )
+);
+CREATE POLICY "Admins view all booking addons" ON public.booking_addons FOR SELECT USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+CREATE POLICY "Admins manage booking addons" ON public.booking_addons FOR ALL USING ((SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin');
+
+-- 15. Timezone Support (Experts & Bookings)
+ALTER TABLE public.experts
+  ADD COLUMN IF NOT EXISTS timezone TEXT;
+
+ALTER TABLE public.bookings
+  ADD COLUMN IF NOT EXISTS start_at TIMESTAMP WITH TIME ZONE,
+  ADD COLUMN IF NOT EXISTS expert_timezone TEXT,
+  ADD COLUMN IF NOT EXISTS user_timezone TEXT;
+
+-- User timezone preference
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS timezone TEXT;

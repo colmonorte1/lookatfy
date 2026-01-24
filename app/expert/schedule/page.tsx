@@ -24,6 +24,7 @@ export default function ExpertSchedulePage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [expertTimezone, setExpertTimezone] = useState<string | null>(null);
 
     // State
     const [days, setDays] = useState<DaySchedule[]>(DAYS_MAP.map(d => ({
@@ -44,6 +45,16 @@ export default function ExpertSchedulePage() {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
+
+            // Fetch expert timezone
+            const { data: expertRow, error: expertErr } = await supabase
+                .from('experts')
+                .select('timezone')
+                .eq('id', user.id)
+                .single();
+            if (!expertErr && expertRow) {
+                setExpertTimezone(expertRow.timezone ?? null);
+            }
 
             // 1. Fetch Weekly Availability
             const { data: availability, error: availError } = await supabase
@@ -240,11 +251,16 @@ export default function ExpertSchedulePage() {
     if (isLoading) return <div style={{ padding: '2rem' }}>Cargando horarios...</div>;
 
     return (
-        <div style={{ maxWidth: '900px' }}>
+        <div style={{ maxWidth: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <div>
                     <h1 style={{ fontSize: '2rem' }}>Mis Horarios</h1>
                     <p style={{ color: 'rgb(var(--text-secondary))', marginTop: '0.5rem' }}>Configura tus franjas horarias y días libres (Excepciones).</p>
+                    {expertTimezone && (
+                        <p style={{ color: 'rgb(var(--text-secondary))', marginTop: '0.25rem' }}>
+                            Zona horaria del experto: <strong>{expertTimezone}</strong>
+                        </p>
+                    )}
                 </div>
                 <Button onClick={handleSave} disabled={isSaving} style={{ gap: '0.5rem' }}>
                     {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}

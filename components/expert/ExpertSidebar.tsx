@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, User, Calendar, Clock, Briefcase, LogOut, DollarSign, AlertCircle } from 'lucide-react';
+import { LayoutDashboard, User, Calendar, Clock, Briefcase, LogOut, DollarSign, AlertCircle, Wallet, Landmark } from 'lucide-react';
 import styles from './ExpertSidebar.module.css';
 import { createClient } from '@/utils/supabase/client';
 
@@ -10,10 +10,12 @@ const MENU_ITEMS = [
     { href: '/expert', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/expert/services', label: 'Mis Servicios', icon: Briefcase },
     { href: '/expert/earnings', label: 'Mis Ganancias', icon: DollarSign },
+    { href: '/expert/withdrawals', label: 'Mis Retiros', icon: Wallet },
     { href: '/expert/bookings', label: 'Mis Reservas', icon: Calendar },
     { href: '/expert/schedule', label: 'Mis Horarios', icon: Clock },
     { href: '/expert/disputes', label: 'Disputas', icon: AlertCircle },
     { href: '/expert/profile', label: 'Mi Perfil', icon: User },
+    { href: '/expert/banks', label: 'Bancos', icon: Landmark },
     //   { href: '/expert/settings', label: 'Configuración', icon: Settings },
 ];
 

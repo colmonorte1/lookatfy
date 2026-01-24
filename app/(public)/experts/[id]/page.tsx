@@ -88,9 +88,9 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                 `)
                 .in('booking_id', bookingIds);
             const agg: Record<string, number[]> = {};
-            type JoinedReviewRow = { rating?: number | string | null; booking?: { service_id?: string } };
+            type JoinedReviewRow = { rating?: number | string | null; booking?: { service_id?: string }[] | { service_id?: string } };
             (reviewsRows || []).forEach((r: JoinedReviewRow) => {
-                const sid = r.booking?.service_id;
+                const sid = Array.isArray(r.booking) ? r.booking[0]?.service_id : r.booking?.service_id;
                 const val = Number(r.rating);
                 if (sid && !isNaN(val)) {
                     if (!agg[sid]) agg[sid] = [];
@@ -123,16 +123,19 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
         rating?: number | string | null;
         comment?: string | null;
         created_at: string;
-        reviewer?: { full_name?: string | null; avatar_url?: string | null } | null;
+        reviewer?: { full_name?: string | null; avatar_url?: string | null } | { full_name?: string | null; avatar_url?: string | null }[] | null;
     };
-    const reviews = (reviewsData || []).map((r: ReviewRow) => ({
-        id: r.id,
-        author: r.reviewer?.full_name || 'Usuario',
-        avatar: r.reviewer?.avatar_url || undefined,
-        rating: Number(r.rating) || 5,
-        date: new Date(r.created_at).toLocaleDateString(),
-        comment: r.comment || ''
-    }));
+    const reviews = (reviewsData || []).map((r: ReviewRow) => {
+        const reviewerObj = Array.isArray(r.reviewer) ? r.reviewer[0] : r.reviewer;
+        return {
+            id: r.id,
+            author: reviewerObj?.full_name || 'Usuario',
+            avatar: reviewerObj?.avatar_url || undefined,
+            rating: Number(r.rating) || 5,
+            date: new Date(r.created_at).toLocaleDateString(),
+            comment: r.comment || ''
+        };
+    });
 
     return (
         <main className="container" style={{ padding: '3rem 1rem 6rem' }}>

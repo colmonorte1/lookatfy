@@ -217,7 +217,7 @@ export default function ExpertDisputesPage() {
     };
 
     return (
-        <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem' }}>
+        <div style={{ maxWidth: '100%', margin: '0 auto', padding: '2rem' }}>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <AlertCircle /> {dict[lang].title}
             </h1>

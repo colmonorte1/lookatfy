@@ -102,9 +102,7 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
                             .eq('id', bookingId)
                             .single();
 
-                        const durationMin: number = (booking?.service && !Array.isArray(booking.service))
-                            ? Number(booking.service.duration) || 60
-                            : Number(Array.isArray(booking?.service) ? booking?.service?.[0]?.duration : undefined) || 60;
+                        const durationMin: number = Number((Array.isArray(booking?.service) ? booking?.service?.[0]?.duration : (booking?.service as any)?.duration) ?? 60);
                         const scheduledStart = (() => {
                             try {
                                 const [y, m, d] = String(booking?.date || '').split('-').map(Number);
@@ -217,7 +215,7 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
                         </div>
                     </div>
                 )}
-                <CallUI />
+                <CallUI roomUrl={roomUrl} bookingId={bookingId} />
             </div>
         </DailyProvider>
     );

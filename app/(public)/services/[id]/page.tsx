@@ -126,7 +126,8 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
         reviews_total: expertCount,
         verified: service.expert.verified,
         languages: Array.isArray((service.expert as any).languages) ? (service.expert as any).languages : [],
-        skills: Array.isArray((service.expert as any).skills) ? (service.expert as any).skills : []
+        skills: Array.isArray((service.expert as any).skills) ? (service.expert as any).skills : [],
+        timezone: (service.expert as any).timezone || null
     } : {};
 
     return <ServiceDetailClient service={service} expert={expertData} reviews={reviews} />;

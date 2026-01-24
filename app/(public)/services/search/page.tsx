@@ -60,6 +60,8 @@ export default async function ServicesSearchPage({ searchParams }: { searchParam
     title?: string | null;
     category?: string | null;
     country?: string | null;
+    price?: number | string | null;
+    currency?: string | null;
     expert?: { country?: string | null; profile?: { full_name?: string | null; avatar_url?: string | null } | null } | null;
   };
   let filtered: ServiceRow[] = ((services || []) as ServiceRow[]);
@@ -115,9 +117,27 @@ export default async function ServicesSearchPage({ searchParams }: { searchParam
   }
 
   const servicesWithRatings = filtered.map((s) => ({
-    ...s,
+    id: s.id,
+    title: String(s.title || 'Servicio'),
+    price: Number((s as any).price ?? 0),
+    currency: String((s as any).currency || 'USD'),
+    category: String(s.category || 'General'),
+    image_url: (s as any).image_url || undefined,
+    country: s.country || undefined,
     rating_avg: serviceRatingMap[s.id]?.avg ?? undefined,
-    reviews_count_service: serviceRatingMap[s.id]?.count ?? undefined
+    reviews_count_service: serviceRatingMap[s.id]?.count ?? undefined,
+    expert: {
+      id: String((s.expert as any)?.id || ''),
+      title: String((s.expert as any)?.title || 'Profesional'),
+      rating: Number((s.expert as any)?.rating ?? 5),
+      reviews_count: Number((s.expert as any)?.reviews_count ?? 0),
+      city: (s.expert as any)?.city || undefined,
+      country: (s.expert as any)?.country || undefined,
+      profile: {
+        full_name: String(s.expert?.profile?.full_name || 'Experto'),
+        avatar_url: String(s.expert?.profile?.avatar_url || 'https://i.pravatar.cc/150?u=expert'),
+      },
+    },
   }));
 
   return (

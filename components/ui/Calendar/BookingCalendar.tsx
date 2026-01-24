@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, X, Clock } from 'lucide-react';
 import { Button } from '../Button/Button';
 import styles from './BookingCalendar.module.css';
 import { getExpertAvailability, DayAvailability } from '@/app/services/actions';
+import { toISODateInTZ, fromUTC, buildLocalDate, toISOTimeInTZ } from '@/utils/timezone';
 
 interface BookingCalendarProps {
     isOpen: boolean;
@@ -12,12 +13,20 @@ interface BookingCalendarProps {
     onSelectDate: (date: string, time: string) => void;
     expertId: string;
     serviceDuration: number;
+    expertTimezone?: string;
 }
 
-export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, serviceDuration }: BookingCalendarProps) => {
+export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, serviceDuration, expertTimezone }: BookingCalendarProps) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<number | null>(null);
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
+    const [userTimezone, setUserTimezone] = useState<string>(() => {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+        } catch {
+            return 'UTC';
+        }
+    });
 
     // State for availability data
     const [availability, setAvailability] = useState<DayAvailability[]>([]);
@@ -63,15 +72,9 @@ export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, servi
     const getDayAvailability = (day: number) => {
         if (availability.length === 0) return { status: 'loading', slots: [] };
 
-        // Construct date string to match API response
-        const checkDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-        // Correct for timezone offset issues with simple comparison by creating local ISO part
-        // API returns YYYY-MM-DD. 
-        // We can reconstruct it simply:
-        const y = checkDate.getFullYear();
-        const m = String(checkDate.getMonth() + 1).padStart(2, '0');
-        const d = String(day).padStart(2, '0');
-        const dateStr = `${y}-${m}-${d}`;
+        // Construir fecha para comparar usando la zona del experto
+        const utcMidday = new Date(Date.UTC(currentDate.getFullYear(), currentDate.getMonth(), day, 12, 0, 0));
+        const dateStr = toISODateInTZ(utcMidday, expertTimezone || 'UTC');
 
         const dayData = availability.find(a => a.date === dateStr);
         return dayData ? dayData : { status: 'unavailable', slots: [] }; // Default unavailable if not found
@@ -167,7 +170,14 @@ export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, servi
 
                         {timeSlots.length > 0 ? (
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                                {timeSlots.map((time: string) => (
+                                {timeSlots.map((time: string) => {
+                                    // Convertir etiqueta de hora desde la tz del experto hacia tz del usuario
+                                    const y = currentDate.getFullYear();
+                                    const m = currentDate.getMonth() + 1;
+                                    const d = selectedDate || new Date(currentDate).getDate();
+                                    const utcStart = buildLocalDate(y, m, d, Number(time.slice(0,2)), Number(time.slice(3,5)), expertTimezone || 'UTC');
+                                    const userLabel = toISOTimeInTZ(utcStart, userTimezone);
+                                    return (
                                     <button
                                         key={time}
                                         onClick={() => setSelectedTime(time)}
@@ -181,9 +191,10 @@ export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, servi
                                             fontSize: '0.85rem'
                                         }}
                                     >
-                                        {time}
+                                        {userLabel}
                                     </button>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div style={{ marginBottom: '1rem', color: 'rgb(var(--error))', fontSize: '0.9rem' }}>
@@ -191,6 +202,9 @@ export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, servi
                             </div>
                         )}
 
+                        <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))', marginBottom: '0.5rem' }}>
+                            Tu zona horaria: <strong>{userTimezone}</strong>{expertTimezone ? ` • Zona del experto: ${expertTimezone}` : ''}
+                        </div>
                         <Button fullWidth onClick={handleConfirm} disabled={!selectedTime}>
                             Confirmar Horario
                         </Button>

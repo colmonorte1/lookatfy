@@ -50,6 +50,7 @@ export async function POST() {
                 properties: {
                     enable_chat: true,
                     enable_screenshare: true,
+                    enable_recording: 'cloud',
                     exp: Math.round(Date.now() / 1000) + 24 * 60 * 60,
                 },
             }),

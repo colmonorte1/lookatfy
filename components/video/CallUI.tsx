@@ -4,7 +4,7 @@ import { useParticipantIds } from '@daily-co/daily-react';
 import Tile from './Tile';
 import Controls from './Controls';
 
-export default function CallUI() {
+export default function CallUI({ roomUrl, bookingId }: { roomUrl: string; bookingId?: string }) {
     const remoteParticipantIds = useParticipantIds({ filter: 'remote' });
     const localParticipantId = useParticipantIds({ filter: 'local' })[0];
 
@@ -54,7 +54,7 @@ export default function CallUI() {
                 display: 'flex', justifyContent: 'center',
                 background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)'
             }}>
-                <Controls />
+                <Controls roomUrl={roomUrl} bookingId={bookingId} />
             </div>
         </div>
     );

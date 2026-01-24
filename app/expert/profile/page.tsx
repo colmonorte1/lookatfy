@@ -25,7 +25,7 @@ export default async function ExpertProfileSettingsPage() {
         .single();
 
     return (
-        <div style={{ maxWidth: '800px' }}>
+        <div style={{ maxWidth: '100%' }}>
             <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>Mi Perfil Público</h1>
             <ProfileForm user={profile} expert={expert} />
         </div>

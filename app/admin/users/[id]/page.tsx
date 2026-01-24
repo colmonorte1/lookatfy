@@ -44,8 +44,13 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
     const sessionsAttended = userBookings.filter(b => b.status === 'completed').length;
     const upcomingSessions = userBookings.filter(b => b.status === 'confirmed').length;
 
-    // Recordings placeholder (We don't have recordings table yet)
-    const recordingsCount = 0;
+    // Recordings
+    const { data: recordings } = await supabase
+        .from('recordings')
+        .select('*')
+        .eq('user_id', id)
+        .order('created_at', { ascending: false });
+    const recordingsCount = (recordings || []).length;
 
     // Helper for formatting currency
     const formatMoney = (amount: number, currency = 'USD') => {
@@ -194,16 +199,64 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
                 </div>
 
                 {/* Recordings Section (Placeholder for now) */}
-                <div style={{ background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))', overflow: 'hidden', opacity: 0.5 }}>
+                <div style={{ background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))', overflow: 'hidden' }}>
                     <div style={{ padding: '1.5rem', borderBottom: '1px solid rgb(var(--border))' }}>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <PlayCircle size={18} /> Grabaciones Disponibles
+                            <PlayCircle size={18} /> Mis grabaciones
                         </h3>
                     </div>
-                    <div style={{ padding: '2rem', textAlign: 'center', color: 'rgb(var(--text-secondary))' }}>
-                        <p>No hay grabaciones disponibles por el momento.</p>
-                        <p style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>(Funcionalidad pendiente de integración de almacenamiento)</p>
-                    </div>
+                    {(!recordings || recordings.length === 0) ? (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: 'rgb(var(--text-secondary))' }}>
+                            No hay grabaciones disponibles por el momento.
+                        </div>
+                    ) : (
+                        <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+                            {recordings.map((r: any) => (
+                                <div key={r.id} style={{ borderBottom: '1px solid rgb(var(--border))', paddingBottom: '1rem' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                        <div>
+                                            <div style={{ fontWeight: 600 }}>{r.room_name || 'Sala'}</div>
+                                            <div style={{ fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>
+                                                {new Date(r.created_at).toLocaleString()} • {r.type || 'cloud'}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            {r.storage_url && (
+                                                <a href={r.storage_url} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'rgb(var(--primary))' }}>Abrir</a>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {r.storage_url ? (
+                                        <video src={r.storage_url} controls style={{ width: '100%', borderRadius: '8px' }} />
+                                    ) : (
+                                        <div style={{ fontSize: '0.9rem', color: 'rgb(var(--text-secondary))' }}>
+                                            Pendiente de URL o en procesamiento.
+                                        </div>
+                                    )}
+                                    <div style={{ marginTop: '0.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                                        {/* Delete action added below via server action */}
+                                        <form action={async () => {
+                                            'use server';
+                                            const supabase = await (await import('@/utils/supabase/server')).createClient();
+                                            const { data: { user } } = await supabase.auth.getUser();
+                                            if (!user) return;
+                                            const { data: profile } = await supabase
+                                                .from('profiles')
+                                                .select('role')
+                                                .eq('id', user.id)
+                                                .single();
+                                            if (profile?.role !== 'admin') return;
+                                            await supabase.from('recordings').delete().eq('id', r.id);
+                                            const { revalidatePath } = await import('next/cache');
+                                            revalidatePath(`/admin/users/${id}`);
+                                        }}>
+                                            <Button variant="outline">Eliminar</Button>
+                                        </form>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

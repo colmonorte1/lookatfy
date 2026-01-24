@@ -210,6 +210,22 @@ export default async function UserDashboard() {
                     </div>
                 </div>
 
+                {/* My Recordings */}
+                <div style={{
+                    background: 'rgb(var(--surface))', padding: '2rem', borderRadius: 'var(--radius-lg)',
+                    border: '1px solid rgb(var(--border))'
+                }}>
+                    <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>Mis Grabaciones</h3>
+                    <p style={{ color: 'rgb(var(--text-secondary))', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+                        Revisa y reproduce tus sesiones grabadas.
+                    </p>
+                    <Link href="/user/recordings">
+                        <Button variant="outline" style={{ width: '100%', justifyContent: 'space-between' }}>
+                            Ir a Mis Grabaciones <ChevronRight size={16} />
+                        </Button>
+                    </Link>
+                </div>
+
             </div>
         </div>
     );

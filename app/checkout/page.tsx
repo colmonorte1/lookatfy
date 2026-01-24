@@ -6,12 +6,14 @@ import { CreditCard, Calendar, Clock, Lock, ShieldCheck, ChevronLeft } from 'luc
 import { Button } from '@/components/ui/Button/Button';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
+import { buildLocalDate } from '@/utils/timezone';
 
 // Helper to wrap useSearchParams in Suspense
 function CheckoutContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const [isProcessing, setIsProcessing] = useState(false);
+    const [userTimezonePref, setUserTimezonePref] = useState<string | null>(null);
 
     // User Form State
     const [formData, setFormData] = useState({
@@ -29,6 +31,8 @@ function CheckoutContent() {
         expiry: '',
         cvc: ''
     });
+    const [addons, setAddons] = useState<Array<{ id: string; name: string; price: number }>>([]);
+    const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
 
     const [loadingUser, setLoadingUser] = useState(true);
 
@@ -58,6 +62,19 @@ function CheckoutContent() {
                     surname: profile?.last_name || profile?.full_name?.split(' ').slice(1).join(' ') || '',
                     phone: profile?.phone || ''
                 }));
+                setUserTimezonePref((profile as any)?.timezone || null);
+                let targetCountry = profile?.country || '';
+                try {
+                    if (!targetCountry && expertId) {
+                        const { data: expertRow } = await supabase.from('experts').select('country').eq('id', expertId).single();
+                        targetCountry = String(expertRow?.country || '');
+                    }
+                } catch {}
+                try {
+                    const { data: svc } = await supabase.from('admin_services').select('id,name,price,country_code,active');
+                    const list = (svc || []).filter((s: any) => !!s.active && (!s.country_code || s.country_code === targetCountry)).map((s: any) => ({ id: String(s.id), name: String(s.name), price: Number(s.price) }));
+                    setAddons(list);
+                } catch {}
             }
             setLoadingUser(false);
         };
@@ -110,7 +127,21 @@ function CheckoutContent() {
             }
 
             // 3. Insert Booking
-            const { error: bookingError } = await supabase
+            // Compute start_at UTC and tz metadata
+            const userTz = userTimezonePref || (() => {
+                try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
+            })();
+            let expertTz = 'UTC';
+            try {
+                const { data: expertRow } = await supabase.from('experts').select('timezone').eq('id', expertId).single();
+                expertTz = String(expertRow?.timezone || 'UTC');
+            } catch {}
+            const [y, m, d] = date.split('-').map(n => Number(n));
+            const hh = Number(time.slice(0,2));
+            const mm = Number(time.slice(3,5));
+            const startAtUTC = buildLocalDate(y, m, d, hh, mm, expertTz);
+
+            const { data: bookingRow, error: bookingError } = await supabase
                 .from('bookings')
                 .insert({
                     user_id: user.id,
@@ -118,16 +149,30 @@ function CheckoutContent() {
                     service_id: serviceId,
                     date: date,
                     time: time,
+                    start_at: startAtUTC.toISOString(),
+                    expert_timezone: expertTz,
+                    user_timezone: userTz,
                     status: 'confirmed', // Mock Payment successful
                     price: price, // Store base price
                     currency: currency,
                     meeting_url: roomUrl
-                    // Notes are not in schema yet! 
-                    // If we want to save notes, we need a column.
-                    // For now, we will just log them or ignore them until schema update.
-                });
+                })
+                .select('id')
+                .single();
 
             if (bookingError) throw bookingError;
+            const bookingId = String(bookingRow?.id || '');
+            if (bookingId && selectedAddons.length) {
+                const rows = addons.filter(a => selectedAddons.includes(a.id)).map(a => ({ booking_id: bookingId, admin_service_id: a.id, price: a.price }));
+                if (rows.length) {
+                    await supabase.from('booking_addons').insert(rows);
+                }
+            }
+
+            // 3b. Trigger email notification with ICS (mock provider payload)
+            try {
+                await fetch(`/api/bookings/${bookingId}/email`, { method: 'POST' });
+            } catch {}
 
             // Optional: Update profile phone/name if filled and was empty? 
             // Skipping to avoid side effects complexity for now.
@@ -341,6 +386,25 @@ function CheckoutContent() {
                                 />
                             </div>
 
+                            {addons.length > 0 && (
+                                <div style={{ marginBottom: '1.5rem' }}>
+                                    <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem' }}>Servicios opcionales</h4>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        {addons.map(a => (
+                                            <label key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', border: '1px solid rgb(var(--border))', borderRadius: 'var(--radius-md)', padding: '0.5rem 0.75rem' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    <input type="checkbox" checked={selectedAddons.includes(a.id)} onChange={(e) => {
+                                                        setSelectedAddons(prev => e.target.checked ? [...prev, a.id] : prev.filter(id => id !== a.id));
+                                                    }} />
+                                                    <span>{a.name}</span>
+                                                </div>
+                                                <span>{currency === 'USD' ? '$' : '€'}{a.price.toFixed(2)}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgb(var(--border))' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                                     <span style={{ color: 'rgb(var(--text-secondary))' }}>Subtotal</span>
@@ -350,14 +414,20 @@ function CheckoutContent() {
                                     <span style={{ color: 'rgb(var(--text-secondary))' }}>Tarifa de Servicio</span>
                                     <span>{currency === 'USD' ? '$' : '€'}2.00</span>
                                 </div>
+                                {selectedAddons.length > 0 && addons.filter(a => selectedAddons.includes(a.id)).map(a => (
+                                    <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                                        <span style={{ color: 'rgb(var(--text-secondary))' }}>{a.name}</span>
+                                        <span>{currency === 'USD' ? '$' : '€'}{a.price.toFixed(2)}</span>
+                                    </div>
+                                ))}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', fontWeight: 700, fontSize: '1.1rem' }}>
                                     <span>Total</span>
-                                    <span>{currency === 'USD' ? '$' : '€'}{price + 2}</span>
+                                    <span>{currency === 'USD' ? '$' : '€'}{(price + 2 + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0)).toFixed(2)}</span>
                                 </div>
                             </div>
 
                             <Button fullWidth size="lg" disabled={isProcessing} type="submit" style={{ marginTop: '0.5rem' }}>
-                                {isProcessing ? 'Procesando...' : `Pagar ${currency === 'USD' ? '$' : '€'}${price + 2}`}
+                                {isProcessing ? 'Procesando...' : `Pagar ${currency === 'USD' ? '$' : '€'}${(price + 2 + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0)).toFixed(2)}`}
                             </Button>
 
                             <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'rgb(var(--text-muted))', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>

@@ -27,6 +27,7 @@ interface Expert {
     phone?: string;
     languages?: Array<{ name: string; level: string }>;
     skills?: Array<{ name: string; level: string }>;
+    timezone?: string;
 }
 
 interface ProfileFormProps {
@@ -39,6 +40,10 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
     const [uploading, setUploading] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [changingPwd, setChangingPwd] = useState(false);
 
     interface FormDataState {
         first_name: string;
@@ -49,6 +54,7 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
         country: string;
         phone: string;
         email: string;
+        timezone: string;
     }
 
     const [formData, setFormData] = useState<FormDataState>({
@@ -60,6 +66,7 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
         country: expert?.country || '',
         phone: expert?.phone || '',
         email: user?.email || '',
+        timezone: expert?.timezone || '',
     });
 
     type BudgetItem = { name: string; level: string };
@@ -164,7 +171,8 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
                     country: formData.country,
                     phone: formData.phone,
                     languages,
-                    skills
+                    skills,
+                    timezone: formData.timezone || null
                 });
 
             if (expertError) throw expertError as unknown;
@@ -178,6 +186,49 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
             alert(`Error al actualizar el perfil: ${message}`);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleChangePassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!user?.email) {
+            alert('No se encontró tu email para validar la contraseña.');
+            return;
+        }
+        if (newPassword.length < 8) {
+            alert('La nueva contraseña debe tener al menos 8 caracteres.');
+            return;
+        }
+        if (!/[0-9]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
+            alert('La nueva contraseña debe incluir al menos un número y un símbolo.');
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            alert('La confirmación no coincide con la nueva contraseña.');
+            return;
+        }
+        try {
+            setChangingPwd(true);
+            const supabase = createClient();
+            const { error: signErr } = await supabase.auth.signInWithPassword({ email: String(user.email), password: currentPassword });
+            if (signErr) {
+                alert('La contraseña anterior es incorrecta.');
+                return;
+            }
+            const { error: updErr } = await supabase.auth.updateUser({ password: newPassword });
+            if (updErr) {
+                alert(`No se pudo actualizar la contraseña: ${updErr.message}`);
+                return;
+            }
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+            alert('Contraseña actualizada correctamente.');
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            alert(`Error: ${msg}`);
+        } finally {
+            setChangingPwd(false);
         }
     };
 
@@ -428,11 +479,79 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
                         </div>
                     </div>
 
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                            <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Zona Horaria</label>
+                            <select
+                                value={formData.timezone}
+                                onChange={(e) => setFormData(prev => ({ ...prev, timezone: e.target.value }))}
+                                required
+                                style={{ padding: '0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--background))' }}
+                                aria-label="Zona horaria"
+                            >
+                                <option value="" disabled>Selecciona tu zona</option>
+                                <option value="America/Bogota">Colombia (America/Bogota)</option>
+                                <option value="America/New_York">USA - Este (America/New_York)</option>
+                                <option value="America/Los_Angeles">USA - Pacífico (America/Los_Angeles)</option>
+                                <option value="UTC">UTC</option>
+                            </select>
+                            <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>
+                                Usamos zonas IANA. Ampliaremos la lista más adelante.
+                            </span>
+                        </div>
+                    </div>
+
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
                         <Button type="submit" disabled={isLoading} style={{ gap: '0.5rem' }}>
                             <Save size={18} />
                             {isLoading ? 'Guardando...' : 'Guardar Cambios'}
                         </Button>
+                    </div>
+                </form>
+
+                <div style={{ height: '1px', background: 'rgb(var(--border))', width: '100%' }} />
+
+                <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }} aria-label="Cambiar contraseña">
+                    <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Seguridad</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                        <Input
+                            label="Contraseña anterior"
+                            type="password"
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            required
+                        />
+                        <Input
+                            label="Nueva contraseña"
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            required
+                        />
+                    </div>
+                    {(function(){
+                        const p = newPassword;
+                        let s = 0; if (p.length >= 8) s++; if (/[A-Z]/.test(p)) s++; if (/[0-9]/.test(p)) s++; if (/[^A-Za-z0-9]/.test(p)) s++;
+                        const label = s <= 1 ? 'Débil' : s === 2 ? 'Media' : s === 3 ? 'Buena' : 'Alta';
+                        const color = s <= 1 ? 'rgb(var(--error))' : s === 2 ? 'rgb(var(--warning))' : s === 3 ? 'rgb(var(--primary))' : 'rgb(var(--success))';
+                        return (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <div style={{ height: '8px', background: 'rgb(var(--border))', borderRadius: '999px', width: '160px', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${(s/4)*100}%`, background: color }} />
+                                </div>
+                                <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>Fortaleza: {label}</span>
+                            </div>
+                        );
+                    })()}
+                    <Input
+                        label="Confirmar nueva contraseña"
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <Button type="submit" variant="primary" isLoading={changingPwd}>Actualizar contraseña</Button>
                     </div>
                 </form>
             </div>
