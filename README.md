@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Lookatfy App v1
 
-## Getting Started
+Aplicación Next.js con App Router, SSR/CSR, TypeScript, Supabase y Daily.co.
 
-First, run the development server:
+### Requisitos
+- Node.js 20+ y npm
+- Cuenta y proyecto en Supabase
+- Cuenta y API key en Daily.co
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+### Configuración de entorno
+1. Copia el archivo `.env.example` a `.env.local` y completa valores:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+DAILY_API_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Verifica dominios de imágenes en `next.config.ts` si usas storage propio.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Desarrollo local
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
+Aplicación en http://localhost:3000
 
-To learn more about Next.js, take a look at the following resources:
+### Scripts útiles
+- `npm run dev`: servidor de desarrollo
+- `npm run build`: compilación de producción
+- `npm run start`: servidor de producción local
+- `npm run lint`: análisis ESLint
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Supabase
+- Esquema y políticas en `supabase/schema.sql`
+- Cliente SSR: `utils/supabase/server.ts`
+- Cliente browser: `utils/supabase/client.ts`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Videollamadas
+- Endpoint para crear sala Daily: `app/api/daily/room/route.ts`
+- UI y provider Daily: `components/video/VideoCall.tsx` y `components/video/CallUI.tsx`
 
-## Deploy on Vercel
+### Despliegue en Vercel + Supabase
+1. Importa el repo en Vercel
+2. Configura variables de entorno en Vercel
+3. Conecta Supabase y aplica `supabase/schema.sql` si corresponde
+4. Ajusta dominios de imágenes en `next.config.ts`
+5. Ejecuta build automático
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Calidad y A11y
+- App Router con páginas de estados `loading` y `error` por sección
+- ESLint configurado en `eslint.config.mjs`
+- TypeScript estricto en `tsconfig.json`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Estructura relevante
+- Páginas y layouts: `app/*`
+- Componentes UI: `components/*`
+- Acciones de servidor: `app/**/actions.ts`
+- Middleware de sesión: `middleware.ts`
+
+### Notas
+- No exponer claves del Service Role en cliente
+- Usar Server Actions o API Routes para operaciones sensibles

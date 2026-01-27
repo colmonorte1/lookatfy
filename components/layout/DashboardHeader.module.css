@@ -1,0 +1,103 @@
+.header {
+    height: 64px;
+    background-color: rgb(var(--surface));
+    border-bottom: 1px solid rgb(var(--border));
+    position: sticky;
+    top: 0;
+    z-index: 40;
+}
+
+.container {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 0 2rem;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-left: auto;
+    /* Pushes everything to the right */
+}
+
+.iconButton {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    background: transparent;
+    color: rgb(var(--text-secondary));
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    text-decoration: none;
+}
+
+.iconButton:hover {
+    background: rgb(var(--surface-hover));
+    color: rgb(var(--primary));
+    transform: translateY(-1px);
+}
+
+.badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    background: rgb(var(--danger));
+    border-radius: 50%;
+    border: 1px solid rgb(var(--surface));
+}
+
+.profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-left: 1rem;
+    border-left: 1px solid rgb(var(--border));
+    margin-left: 0.5rem;
+}
+
+.userInfo {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.2;
+}
+
+.userName {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: rgb(var(--text-main));
+}
+
+.userRole {
+    font-size: 0.75rem;
+    color: rgb(var(--text-secondary));
+}
+
+.avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgb(var(--primary));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}

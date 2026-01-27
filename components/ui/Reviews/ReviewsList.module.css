@@ -1,0 +1,119 @@
+.container {
+    margin-top: 2rem;
+}
+
+.title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.count {
+    color: rgb(var(--text-muted));
+    font-size: 1rem;
+    font-weight: 400;
+}
+
+.grid {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.card {
+    background: rgb(var(--surface));
+    border: 1px solid rgb(var(--border));
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    transition: transform 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    border-color: rgb(var(--border-hover));
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.authorInfo {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: rgb(var(--surface-hover));
+    flex-shrink: 0;
+}
+
+.avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.initial {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgb(var(--primary));
+    font-weight: 600;
+    font-size: 1.2rem;
+}
+
+.authorName {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: rgb(var(--text-main));
+}
+
+.date {
+    font-size: 0.8rem;
+    color: rgb(var(--text-muted));
+}
+
+.rating {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 600;
+    background: rgb(var(--surface-hover));
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.starIcon {
+    stroke: none;
+}
+
+.serviceContext {
+    font-size: 0.8rem;
+    color: rgb(var(--primary));
+    background: rgba(var(--primary), 0.1);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    display: inline-block;
+    margin-bottom: 0.75rem;
+    font-weight: 500;
+}
+
+.comment {
+    color: rgb(var(--text-secondary));
+    line-height: 1.6;
+    font-size: 0.95rem;
+    font-style: italic;
+}

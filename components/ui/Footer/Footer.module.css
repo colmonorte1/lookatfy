@@ -1,0 +1,127 @@
+.footer {
+    background-color: rgb(var(--surface));
+    border-top: 1px solid rgb(var(--border));
+    padding: 4rem 1rem 1rem;
+    margin-top: auto;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 3rem;
+    margin-bottom: 4rem;
+}
+
+/* Adjust column width for brand to be slightly wider if space allows */
+@media (min-width: 1024px) {
+    .column:first-child {
+        grid-column: span 1.5;
+    }
+}
+
+.column {
+    display: flex;
+    flex-direction: column;
+}
+
+.logo {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: rgb(var(--text-main));
+    margin-bottom: 1rem;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.description {
+    color: rgb(var(--text-secondary));
+    line-height: 1.6;
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+}
+
+.heading {
+    font-weight: 600;
+    margin-bottom: 1.25rem;
+    color: rgb(var(--text-main));
+}
+
+.list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.link {
+    color: rgb(var(--text-secondary));
+    text-decoration: none;
+    font-size: 0.95rem;
+    transition: color 0.2s;
+}
+
+.link:hover {
+    color: rgb(var(--primary));
+}
+
+.socials {
+    display: flex;
+    gap: 1rem;
+}
+
+.socialLink {
+    color: rgb(var(--text-muted));
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgb(var(--surface-hover));
+}
+
+.socialLink:hover {
+    background: rgb(var(--primary));
+    color: white;
+    transform: translateY(-2px);
+}
+
+.newsletterForm {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.input {
+    flex: 1;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid rgb(var(--border));
+    background: rgb(var(--background));
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.input:focus {
+    border-color: rgb(var(--primary));
+}
+
+.bottomBar {
+    padding-top: 2rem;
+    border-top: 1px solid rgb(var(--border));
+    text-align: center;
+}
+
+.copyright {
+    color: rgb(var(--text-muted));
+    font-size: 0.875rem;
+}
