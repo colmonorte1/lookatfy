@@ -52,6 +52,7 @@ interface ServiceDetailProps {
 
 export default function ServiceDetailClient({ service, expert, reviews = [] }: ServiceDetailProps) {
     const [selectedDate, setSelectedDate] = useState<number | null>(null);
+    const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const router = useRouter();
@@ -79,9 +80,12 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
     const handleBooking = () => {
         if (!selectedDate || !selectedTime) return;
 
-        const dateObj = new Date();
-        if (selectedDate) dateObj.setDate(selectedDate);
-        const formattedDate = dateObj.toISOString().split('T')[0];
+        const formattedDate = selectedDateStr || (() => {
+            const y = new Date().getFullYear();
+            const m = String(new Date().getMonth() + 1).padStart(2, '0');
+            const d = String(selectedDate).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        })();
 
         const params = new URLSearchParams();
         params.set('title', service.title || '');
@@ -100,6 +104,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
     const handleDateSelect = (dateStr: string, time: string) => {
         const d = new Date(dateStr);
         setSelectedDate(d.getDate());
+        setSelectedDateStr(dateStr);
         setSelectedTime(time);
         setIsCalendarOpen(false); // Close calendar after selection ? or keep open. Let's close it.
     };

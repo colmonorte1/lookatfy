@@ -77,7 +77,11 @@ export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, servi
         const dateStr = toISODateInTZ(utcMidday, expertTimezone || 'UTC');
 
         const dayData = availability.find(a => a.date === dateStr);
-        return dayData ? dayData : { status: 'unavailable', slots: [] }; // Default unavailable if not found
+        // Deshabilitar días pasados respecto a hoy en la zona del experto
+        const todayStr = toISODateInTZ(new Date(), expertTimezone || 'UTC');
+        const isPastDay = dateStr < todayStr;
+        if (isPastDay) return { status: 'unavailable', slots: [] };
+        return dayData ? dayData : { status: 'unavailable', slots: [] }; // Default unavailable si no hay regla
     };
 
     const handleDayClick = (day: number) => {
@@ -170,7 +174,13 @@ export const BookingCalendar = ({ isOpen, onClose, onSelectDate, expertId, servi
 
                         {timeSlots.length > 0 ? (
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                                {timeSlots.map((time: string) => {
+                                {timeSlots.filter((time: string) => {
+                                    const y = currentDate.getFullYear();
+                                    const m = currentDate.getMonth() + 1;
+                                    const d = selectedDate || new Date(currentDate).getDate();
+                                    const utcStart = buildLocalDate(y, m, d, Number(time.slice(0,2)), Number(time.slice(3,5)), expertTimezone || 'UTC');
+                                    return utcStart.getTime() > Date.now();
+                                }).map((time: string) => {
                                     // Convertir etiqueta de hora desde la tz del experto hacia tz del usuario
                                     const y = currentDate.getFullYear();
                                     const m = currentDate.getMonth() + 1;
