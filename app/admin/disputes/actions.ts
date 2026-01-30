@@ -57,6 +57,29 @@ export async function createDispute(data: {
         return { error: error.message };
     }
 
+    // Notify admins about new dispute (broadcast)
+    try {
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_SUPABASE_SERVICE_ROLE_KEY || '';
+        let writeClient = supabase;
+        if (serviceRoleKey) {
+            const { createServerClient } = await import('@supabase/ssr');
+            writeClient = createServerClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                serviceRoleKey,
+                { cookies: { getAll: () => [], setAll: () => { } } }
+            );
+        }
+        await writeClient.from('notifications').insert({
+            target_role: 'admin',
+            type: 'dispute_opened',
+            title: 'Nueva disputa abierta',
+            body: `Se abrió una disputa para la reserva ${data.booking_id}.`,
+            data: { booking_id: data.booking_id },
+            status: 'unread',
+            created_by: user.id,
+        });
+    } catch {}
+
     revalidatePath('/user/bookings');
     revalidatePath('/expert/bookings');
     return { success: true };
@@ -217,6 +240,44 @@ export async function resolveDispute(
     }
 
     revalidatePath('/admin/disputes');
+
+    // Notify participants with resolution
+    try {
+        const { data: row } = await adminClient
+            .from('disputes')
+            .select('booking_id, resolution_notes')
+            .eq('id', disputeId)
+            .single();
+        if (row?.booking_id) {
+            const { data: booking } = await adminClient
+                .from('bookings')
+                .select('user_id, expert_id, date, time')
+                .eq('id', row.booking_id)
+                .single();
+            if (booking) {
+                await adminClient.from('notifications').insert([
+                    {
+                        recipient_user_id: booking.user_id,
+                        type: 'dispute_resolved',
+                        title: 'Tu disputa ha sido resuelta',
+                        body: String(resolution.resolution_notes || ''),
+                        data: { booking_id: row.booking_id },
+                        status: 'unread',
+                        created_by: user?.id || null,
+                    },
+                    {
+                        recipient_user_id: booking.expert_id,
+                        type: 'dispute_resolved',
+                        title: 'Disputa resuelta',
+                        body: String(resolution.resolution_notes || ''),
+                        data: { booking_id: row.booking_id },
+                        status: 'unread',
+                        created_by: user?.id || null,
+                    }
+                ]);
+            }
+        }
+    } catch {}
     return { success: true };
 }
 

@@ -2,7 +2,7 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { fromUTC, toISODateInTZ } from '@/utils/timezone';
-import { getCachedAvailability, setCachedAvailability } from './availabilityCache';
+import { setCachedAvailability } from './availabilityCache';
 
 export type DayAvailability = {
     date: string; // ISO date YYYY-MM-DD
@@ -13,8 +13,7 @@ export type DayAvailability = {
 export async function getExpertAvailability(expertId: string, year: number, month: number, serviceDuration: number): Promise<DayAvailability[]> {
     const supabase = await createClient();
 
-    const cached = getCachedAvailability(expertId, year, month, serviceDuration);
-    if (cached) return cached;
+    // No cache early return: always compute fresh availability to reflect recent blocks
 
     // 1. Get Weekly Schedule
     const { data: schedule } = await supabase

@@ -1,0 +1,77 @@
+.mainGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 350px;
+    gap: 4rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.title {
+    font-size: 2.5rem;
+}
+
+.stickyCard {
+    position: sticky;
+    top: 100px;
+    background: rgb(var(--surface));
+    padding: 2rem;
+    border-radius: 1.5rem;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid rgb(var(--border));
+    text-align: center;
+}
+
+.servicesList {
+    display: grid;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.serviceItem {
+    display: flex;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    border: 1px solid rgb(var(--border));
+    border-radius: var(--radius-lg);
+    background: rgb(var(--surface));
+    align-items: center;
+}
+
+.serviceThumb {
+    width: 120px;
+    height: 80px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.serviceInfo {
+    flex: 1;
+}
+
+@media (max-width: 1024px) {
+    .mainGrid {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .title {
+        font-size: 1.75rem;
+    }
+
+    .stickyCard {
+        position: static;
+    }
+
+    .serviceItem {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .serviceThumb {
+        width: 100%;
+        height: 160px;
+    }
+}

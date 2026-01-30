@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs/Tabs';
 import Link from 'next/link';
 import { ReviewsList } from '@/components/ui/Reviews/ReviewsList';
+import styles from './ExpertDetail.module.css';
 import { createClient } from '@/utils/supabase/server';
 
 type ServiceRow = {
@@ -139,13 +140,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
 
     return (
         <main className="container" style={{ padding: '3rem 1rem 6rem' }}>
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1fr) 350px',
-                gap: '4rem',
-                maxWidth: '1200px',
-                margin: '0 auto'
-            }}>
+            <div className={styles.mainGrid}>
 
                 {/* Left Column: Info & Services */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem' }}>
@@ -153,7 +148,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                     {/* Header Section */}
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                            <h1 style={{ fontSize: '2.5rem' }}>{expertName}</h1>
+                            <h1 className={styles.title}>{expertName}</h1>
                         </div>
                         <p style={{ fontSize: '1.25rem', color: 'rgb(var(--text-secondary))' }}>{expertTitle}</p>
 
@@ -187,19 +182,10 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
 
                             {categories.map(cat => (
                                 <TabsContent key={cat} value={cat}>
-                                    <div style={{ display: 'grid', gap: '1.5rem', marginTop: '1.5rem' }}>
+                                    <div className={styles.servicesList}>
                                         {services.filter(s => s.category === cat).map(service => (
-                                            <div key={service.id} style={{
-                                                display: 'flex',
-                                                gap: '1.5rem',
-                                                padding: '1.5rem',
-                                                border: '1px solid rgb(var(--border))',
-                                                borderRadius: 'var(--radius-lg)',
-                                                background: 'rgb(var(--surface))',
-                                                transition: 'transform 0.2s',
-                                                alignItems: 'center'
-                                            }}>
-                                                <div style={{ width: '120px', height: '80px', borderRadius: '8px', overflow: 'hidden', flexShrink: 0 }}>
+                                            <div key={service.id} className={styles.serviceItem}>
+                                                <div className={styles.serviceThumb}>
                                                     <Image
                                                         src={service.image_url || 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&q=80&w=300&h=200'}
                                                         alt={service.title || ''}
@@ -208,7 +194,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
                                                         style={{ objectFit: 'cover', width: '100%', height: '100%' }}
                                                     />
                                                 </div>
-                                                <div style={{ flex: 1 }}>
+                                                <div className={styles.serviceInfo}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                                                         <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>{service.title}</h3>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -371,16 +357,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
 
                 {/* Right Column: Profile Summary (No Booking) */}
                 <div style={{ position: 'relative' }}>
-                    <div style={{
-                        position: 'sticky',
-                        top: '100px',
-                        background: 'rgb(var(--surface))',
-                        padding: '2rem',
-                        borderRadius: '1.5rem',
-                        boxShadow: 'var(--shadow-lg)',
-                        border: '1px solid rgb(var(--border))',
-                        textAlign: 'center'
-                    }}>
+                    <div className={styles.stickyCard}>
                         <div style={{
                             width: '140px',
                             height: '140px',

@@ -1,12 +1,13 @@
 "use client";
 
-import { Home, Bell, User, LogOut, ChevronDown } from 'lucide-react';
+import { Home, Bell, User, LogOut, ChevronDown, Menu } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import styles from './DashboardHeader.module.css';
+import { useNotifications } from '@/components/notifications/NotificationsProvider';
 
 interface DashboardHeaderProps {
     userType?: 'admin' | 'expert' | 'user';
@@ -17,8 +18,11 @@ interface DashboardHeaderProps {
 
 export const DashboardHeader = ({ userType = 'user', userName = 'Usuario', avatar, email }: DashboardHeaderProps) => {
     const [dropdownOpen, setDropdownOpen] = useState(false);
+    const [notifOpen, setNotifOpen] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const router = useRouter();
     const supabase = createClient();
+    const notifications = useNotifications();
 
     const handleSignOut = async () => {
         await supabase.auth.signOut();
@@ -36,9 +40,21 @@ export const DashboardHeader = ({ userType = 'user', userName = 'Usuario', avata
     return (
         <header className={styles.header}>
             <div className={styles.container}>
-                {/* Left Side: Empty or Breadcrumbs potentially */}
                 <div className={styles.left}>
-                    {/* Placeholder for future breadcrumbs or title */}
+                    <button
+                        className={styles.menuButton}
+                        aria-label="Abrir menú"
+                        aria-controls="dashboard-sidebar"
+                        aria-expanded={isSidebarOpen}
+                        onClick={() => {
+                            setIsSidebarOpen(!isSidebarOpen);
+                            if (typeof window !== 'undefined') {
+                                window.dispatchEvent(new CustomEvent('dashboard:toggleSidebar'));
+                            }
+                        }}
+                    >
+                        <Menu size={20} />
+                    </button>
                 </div>
 
                 {/* Right Side: Actions & Profile */}
@@ -47,10 +63,67 @@ export const DashboardHeader = ({ userType = 'user', userName = 'Usuario', avata
                         <Home size={20} />
                     </Link>
 
-                    <button className={styles.iconButton} title="Notificaciones">
-                        <Bell size={20} />
-                        <span className={styles.badge}>2</span>
-                    </button>
+                    <div className={styles.profile} style={{ position: 'relative' }}>
+                        <button
+                            className={styles.iconButton}
+                            title="Notificaciones"
+                            onClick={() => {
+                                const next = !notifOpen
+                                setNotifOpen(next)
+                                if (next) {
+                                    notifications.markAllUnreadRead()
+                                }
+                            }}
+                        >
+                            <Bell size={20} />
+                            {notifications.unreadCount > 0 && (
+                                <span className={styles.badge}>{notifications.unreadCount}</span>
+                            )}
+                        </button>
+                        {notifOpen && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '120%',
+                                right: 48,
+                                background: 'white',
+                                borderRadius: '8px',
+                                width: '320px',
+                                maxHeight: '360px',
+                                overflow: 'auto',
+                                boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+                                padding: '0.5rem',
+                                zIndex: 100,
+                                border: '1px solid rgb(var(--border))'
+                            }}>
+                                {notifications.notifications.length === 0 && (
+                                    <div style={{ padding: '0.75rem', fontSize: '0.9rem', color: 'rgb(var(--text-secondary))' }}>
+                                        No tienes notificaciones
+                                    </div>
+                                )}
+                                {notifications.notifications.map((n) => (
+                                    <div key={n.id} style={{ padding: '0.5rem', borderRadius: 6, background: n.status === 'unread' ? 'rgba(0,0,0,0.03)' : 'transparent', marginBottom: '0.25rem' }}>
+                                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{n.title}</div>
+                                        {n.body && <div style={{ fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>{n.body}</div>}
+                                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
+                                            {n.status !== 'read' && (
+                                                <button onClick={() => notifications.markRead(n.id)} className={styles.iconButton} title="Marcar como leída">
+                                                    Leer
+                                                </button>
+                                            )}
+                                            <button onClick={() => notifications.archive(n.id)} className={styles.iconButton} title="Archivar">
+                                                Archivar
+                                            </button>
+                                            {n.recipient_user_id && (
+                                                <button onClick={() => notifications.remove(n.id)} className={styles.iconButton} title="Eliminar">
+                                                    Eliminar
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
 
                     <div className={styles.profile} style={{ position: 'relative' }}>
                         <div

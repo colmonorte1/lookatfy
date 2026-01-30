@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { CreditCard, Calendar, Clock, Lock, ShieldCheck, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
@@ -24,13 +24,11 @@ function CheckoutContent() {
         notes: ''
     });
 
-    // Payment Form State (Mock)
-    const [paymentData, setPaymentData] = useState({
-        cardName: '',
-        cardNumber: '',
-        expiry: '',
-        cvc: ''
-    });
+    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'PSE' | 'NEQUI' | 'DAVIPLATA'>('PSE');
+    const [daviplataDoc, setDaviplataDoc] = useState({ type: 'CC', number: '' });
+    const [nequiPhone, setNequiPhone] = useState('');
+    const [pseInfo, setPseInfo] = useState({ user_type: 0, user_phone: '', user_legal_id_type: 'CC', user_legal_id: '', financial_institution_code: '', payment_description: '' });
+    const [pseBanks, setPseBanks] = useState<Array<{ code: string; name: string }>>([]);
     const [addons, setAddons] = useState<Array<{ id: string; name: string; price: number }>>([]);
     const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
 
@@ -47,8 +45,18 @@ function CheckoutContent() {
     const serviceId = searchParams.get('serviceId');
     const expertId = searchParams.get('expertId');
 
+    const formatAmount = (cur: string, amount: number) => {
+        if (cur === 'COP') {
+            return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Math.round(amount));
+        }
+        if (cur === 'EUR') {
+            return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
+        }
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    };
+
     // Fetch User Info on Mount
-    useState(() => {
+    useEffect(() => {
         const fetchUser = async () => {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
@@ -79,17 +87,42 @@ function CheckoutContent() {
             setLoadingUser(false);
         };
         fetchUser();
-    });
+    }, []);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handlePaymentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
-        setPaymentData(prev => ({ ...prev, [name]: value }));
+    const handlePaymentMethodChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setPaymentMethod(e.target.value as any);
     };
+
+    useEffect(() => {
+        const fetchBanks = async () => {
+            try {
+                const res = await fetch('/api/payments/wompi/pse', { cache: 'no-store' });
+                const data = await res.json();
+                const list = Array.isArray(data?.data) ? data.data : [];
+                setPseBanks(list);
+            } catch {}
+        };
+        fetchBanks();
+    }, []);
+
+    useEffect(() => {
+        const refetchIfNeeded = async () => {
+            if (paymentMethod === 'PSE' && pseBanks.length === 0) {
+                try {
+                    const res = await fetch('/api/payments/wompi/pse', { cache: 'no-store' });
+                    const data = await res.json();
+                    const list = Array.isArray(data?.data) ? data.data : [];
+                    setPseBanks(list);
+                } catch {}
+            }
+        };
+        refetchIfNeeded();
+    }, [paymentMethod]);
 
     const handlePayment = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -126,7 +159,7 @@ function CheckoutContent() {
                 console.warn("Daily room creation failed", err);
             }
 
-            // 3. Insert Booking
+            // 3. Insert Booking (status pending)
             // Compute start_at UTC and tz metadata
             const userTz = userTimezonePref || (() => {
                 try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
@@ -152,7 +185,7 @@ function CheckoutContent() {
                     start_at: startAtUTC.toISOString(),
                     expert_timezone: expertTz,
                     user_timezone: userTz,
-                    status: 'confirmed', // Mock Payment successful
+                    status: 'pending',
                     price: price, // Store base price
                     currency: currency,
                     meeting_url: roomUrl
@@ -174,10 +207,122 @@ function CheckoutContent() {
                 await fetch(`/api/bookings/${bookingId}/email`, { method: 'POST' });
             } catch {}
 
+            // 3c. Trigger system notifications (user + expert)
+            try {
+                await fetch('/api/notifications/booking', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ booking_id: bookingId })
+                });
+            } catch {}
+
             // Optional: Update profile phone/name if filled and was empty? 
             // Skipping to avoid side effects complexity for now.
 
-            // 4. Redirect to Success Page
+            const serviceFee = currency === 'COP' ? 2000 : 2;
+            const addonsTotal = addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0);
+            const total = price + serviceFee + addonsTotal;
+
+            // Wompi solo acepta COP - validar o convertir
+            const wompiCurrency = 'COP';
+            let totalInCOP = total;
+
+            if (currency !== 'COP') {
+                // Obtener tasa de cambio actual
+                try {
+                    const rateRes = await fetch(`/api/payments/exchange-rate?from=${currency}`);
+                    if (!rateRes.ok) {
+                        throw new Error('Error obteniendo tasa de cambio');
+                    }
+
+                    const rateData = await rateRes.json();
+                    const rate = rateData.rate;
+
+                    if (!rate || rate <= 0) {
+                        throw new Error(`Tasa de cambio inválida para ${currency}`);
+                    }
+
+                    totalInCOP = Math.round(total * rate);
+
+                    // Informar al usuario de la conversión
+                    const conversionMessage = rateData.source === 'live'
+                        ? `El monto será convertido de ${formatAmount(currency, total)} a ${formatAmount('COP', totalInCOP)} (tasa actual).`
+                        : `El monto será convertido de ${formatAmount(currency, total)} a ${formatAmount('COP', totalInCOP)} (tasa de referencia).`;
+
+                    if (!confirm(`${conversionMessage} ¿Deseas continuar?`)) {
+                        setIsProcessing(false);
+                        return;
+                    }
+                } catch (err) {
+                    alert(`Error obteniendo tasa de cambio para ${currency}. Por favor intenta nuevamente.`);
+                    setIsProcessing(false);
+                    return;
+                }
+            }
+            const onlyDigits = (s: string) => String(s || '').replace(/\D/g, '');
+            const normalizePhoneCOP = (s: string) => {
+                const d = onlyDigits(s);
+                if (d.startsWith('57')) return d;
+                if (d.length === 10) return '57' + d;
+                return d;
+            };
+            const payment_method_payload = (() => {
+                if (paymentMethod === 'NEQUI') return { type: 'NEQUI', phone_number: normalizePhoneCOP(nequiPhone || formData.phone) };
+                if (paymentMethod === 'DAVIPLATA') return { type: 'DAVIPLATA', phone_number: normalizePhoneCOP(formData.phone), user_legal_id_type: daviplataDoc.type, user_legal_id: onlyDigits(daviplataDoc.number) };
+                if (paymentMethod === 'PSE') return { type: 'PSE', user_type: Number(pseInfo.user_type) || 0, user_phone: normalizePhoneCOP(pseInfo.user_phone || formData.phone), user_legal_id_type: pseInfo.user_legal_id_type, user_legal_id: onlyDigits(pseInfo.user_legal_id), user_email: formData.email, financial_institution_code: pseInfo.financial_institution_code, payment_description: pseInfo.payment_description || `Reserva ${serviceTitle}` };
+                return undefined;
+            })();
+            if (paymentMethod === 'PSE') {
+                if (!pseInfo.user_legal_id || !formData.email || !pseInfo.financial_institution_code || !(pseInfo.payment_description || serviceTitle)) {
+                    alert('Para PSE debes ingresar documento, email, banco y descripción.');
+                    setIsProcessing(false);
+                    return;
+                }
+            }
+            if (paymentMethod === 'NEQUI') {
+                if (!(nequiPhone || formData.phone)) {
+                    alert('Para Nequi debes ingresar un teléfono válido.');
+                    setIsProcessing(false);
+                    return;
+                }
+            }
+            if (paymentMethod === 'DAVIPLATA') {
+                if (!daviplataDoc.number || !formData.phone) {
+                    alert('Para Daviplata debes ingresar documento y teléfono.');
+                    setIsProcessing(false);
+                    return;
+                }
+            }
+            const createRes = await fetch('/api/payments/wompi/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    amount_in_cents: Math.round(totalInCOP * 100),
+                    currency: wompiCurrency,
+                    reference: bookingId,
+                    customer_email: formData.email,
+                    payment_method_type: paymentMethod,
+                    payment_method_payload,
+                    original_amount: currency !== 'COP' ? total : undefined,
+                    original_currency: currency !== 'COP' ? currency : undefined
+                })
+            });
+            if (!createRes.ok) {
+                let msg = 'Error creando transacción Wompi'
+                try {
+                    const err = await createRes.json()
+                    msg = err?.error || msg
+                } catch {}
+                throw new Error(msg);
+            }
+            const { transaction } = await createRes.json();
+            const redirectUrl: string | undefined = transaction?.redirect_url || transaction?.payment_link;
+            if (redirectUrl) {
+                router.push(redirectUrl);
+                return;
+            }
+
+            // 5. Redirect to Success Page (fallback)
             let expertLabel = expertName;
             try {
                 const { data: expertRow } = await supabase
@@ -339,52 +484,84 @@ function CheckoutContent() {
 
                         <form onSubmit={handlePayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             <div>
-                                <input
-                                    type="text"
-                                    name="cardName"
-                                    value={paymentData.cardName}
-                                    onChange={handlePaymentChange}
-                                    placeholder="Nombre en la tarjeta"
-                                    required // keep required for UX simulation
+                                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Selecciona método</label>
+                                <select
+                                    value={paymentMethod}
+                                    onChange={handlePaymentMethodChange}
+                                    className="form-input"
                                     style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
-                                />
+                                >
+                                    <option value="PSE">PSE</option>
+                                    <option value="NEQUI">Nequi</option>
+                                    <option value="DAVIPLATA">Daviplata</option>
+                                    <option value="CARD" disabled>Tarjeta (próximamente)</option>
+                                </select>
                             </div>
-
-                            <div style={{ position: 'relative' }}>
-                                <input
-                                    type="text"
-                                    name="cardNumber"
-                                    value={paymentData.cardNumber}
-                                    onChange={handlePaymentChange}
-                                    placeholder="0000 0000 0000 0000"
-                                    required
-                                    style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.25rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
-                                />
-                                <div style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }}>
-                                    <Lock size={14} color="rgb(var(--text-muted))" />
+                            {paymentMethod === 'DAVIPLATA' && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Tipo documento (CC, CE)"
+                                        value={daviplataDoc.type}
+                                        onChange={(e) => setDaviplataDoc(prev => ({ ...prev, type: e.target.value }))}
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Número documento"
+                                        value={daviplataDoc.number}
+                                        onChange={(e) => setDaviplataDoc(prev => ({ ...prev, number: e.target.value }))}
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                    />
                                 </div>
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                <input
-                                    type="text"
-                                    name="expiry"
-                                    value={paymentData.expiry}
-                                    onChange={handlePaymentChange}
-                                    placeholder="MM/YY"
-                                    required
-                                    style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
-                                />
-                                <input
-                                    type="text"
-                                    name="cvc"
-                                    value={paymentData.cvc}
-                                    onChange={handlePaymentChange}
-                                    placeholder="CVC"
-                                    required
-                                    style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
-                                />
-                            </div>
+                            )}
+                            {paymentMethod === 'NEQUI' && (
+                                <div>
+                                    <input
+                                        type="tel"
+                                        placeholder="Teléfono Nequi"
+                                        value={nequiPhone}
+                                        onChange={(e) => setNequiPhone(e.target.value)}
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                    />
+                                </div>
+                            )}
+                            {paymentMethod === 'PSE' && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                    <input
+                                        type="tel"
+                                        placeholder="Teléfono"
+                                        value={pseInfo.user_phone}
+                                        onChange={(e) => setPseInfo(prev => ({ ...prev, user_phone: e.target.value }))}
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Documento"
+                                        value={pseInfo.user_legal_id}
+                                        onChange={(e) => setPseInfo(prev => ({ ...prev, user_legal_id: e.target.value }))}
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                    />
+                                    <select
+                                        value={pseInfo.financial_institution_code}
+                                        onChange={(e) => setPseInfo(prev => ({ ...prev, financial_institution_code: e.target.value }))}
+                                        className="form-input"
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                    >
+                                        <option value="">{pseBanks.length ? 'Selecciona banco' : 'Cargando bancos...'}</option>
+                                        {pseBanks.map(b => (
+                                            <option key={b.code} value={b.code}>{b.name}</option>
+                                        ))}
+                                    </select>
+                                    <input
+                                        type="text"
+                                        placeholder="Descripción del pago"
+                                        value={pseInfo.payment_description}
+                                        onChange={(e) => setPseInfo(prev => ({ ...prev, payment_description: e.target.value }))}
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                    />
+                                </div>
+                            )}
 
                             {addons.length > 0 && (
                                 <div style={{ marginBottom: '1.5rem' }}>
@@ -398,7 +575,7 @@ function CheckoutContent() {
                                                     }} />
                                                     <span>{a.name}</span>
                                                 </div>
-                                                <span>{currency === 'USD' ? '$' : '€'}{a.price.toFixed(2)}</span>
+                                                <span>{formatAmount(currency, a.price)}</span>
                                             </label>
                                         ))}
                                     </div>
@@ -408,30 +585,30 @@ function CheckoutContent() {
                             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgb(var(--border))' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                                     <span style={{ color: 'rgb(var(--text-secondary))' }}>Subtotal</span>
-                                    <span>{currency === 'USD' ? '$' : '€'}{price}</span>
+                                    <span>{formatAmount(currency, price)}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                                     <span style={{ color: 'rgb(var(--text-secondary))' }}>Tarifa de Servicio</span>
-                                    <span>{currency === 'USD' ? '$' : '€'}2.00</span>
+                                    <span>{formatAmount(currency, currency === 'COP' ? 2000 : 2)}</span>
                                 </div>
                                 {selectedAddons.length > 0 && addons.filter(a => selectedAddons.includes(a.id)).map(a => (
                                     <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                                         <span style={{ color: 'rgb(var(--text-secondary))' }}>{a.name}</span>
-                                        <span>{currency === 'USD' ? '$' : '€'}{a.price.toFixed(2)}</span>
+                                        <span>{formatAmount(currency, a.price)}</span>
                                     </div>
                                 ))}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', fontWeight: 700, fontSize: '1.1rem' }}>
                                     <span>Total</span>
-                                    <span>{currency === 'USD' ? '$' : '€'}{(price + 2 + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0)).toFixed(2)}</span>
+                                    <span>{formatAmount(currency, price + (currency === 'COP' ? 2000 : 2) + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0))}</span>
                                 </div>
                             </div>
 
                             <Button fullWidth size="lg" disabled={isProcessing} type="submit" style={{ marginTop: '0.5rem' }}>
-                                {isProcessing ? 'Procesando...' : `Pagar ${currency === 'USD' ? '$' : '€'}${(price + 2 + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0)).toFixed(2)}`}
+                                {isProcessing ? 'Procesando...' : `Pagar ${formatAmount(currency, price + (currency === 'COP' ? 2000 : 2) + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0))}`}
                             </Button>
 
                             <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'rgb(var(--text-muted))', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                                <ShieldCheck size={12} /> Pagos seguros encriptados (Modo Demo)
+                                <ShieldCheck size={12} /> Pagos seguros con Wompi
                             </div>
                         </form>
                     </div>

@@ -187,6 +187,23 @@ export async function approveWithdrawal(id: string, notes?: string) {
     .update({ status: 'approved', admin_notes: notes || null, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) return { error: error.message };
+  try {
+    const { data: w } = await adminClient
+      .from('withdrawals')
+      .select('expert_id, amount, currency')
+      .eq('id', id)
+      .single();
+    if (w?.expert_id) {
+      await adminClient.from('notifications').insert({
+        recipient_user_id: w.expert_id,
+        type: 'withdrawal_approved',
+        title: 'Retiro aprobado',
+        body: `Tu retiro fue aprobado por ${String(w.amount)} ${String(w.currency)}`,
+        data: { withdrawal_id: id },
+        status: 'unread',
+      });
+    }
+  } catch {}
   revalidatePath('/admin/withdrawals');
   return { success: true };
 }
@@ -201,6 +218,23 @@ export async function markWithdrawalPaid(id: string, transactionRef: string) {
     .update({ status: 'paid', transaction_ref: transactionRef, processed_at: now, updated_at: now })
     .eq('id', id);
   if (error) return { error: error.message };
+  try {
+    const { data: w } = await adminClient
+      .from('withdrawals')
+      .select('expert_id, amount, currency')
+      .eq('id', id)
+      .single();
+    if (w?.expert_id) {
+      await adminClient.from('notifications').insert({
+        recipient_user_id: w.expert_id,
+        type: 'withdrawal_paid',
+        title: 'Retiro pagado',
+        body: `Pago emitido por ${String(w.amount)} ${String(w.currency)}.`,
+        data: { withdrawal_id: id, transaction_ref: transactionRef },
+        status: 'unread',
+      });
+    }
+  } catch {}
   revalidatePath('/admin/withdrawals');
   return { success: true };
 }
@@ -213,6 +247,23 @@ export async function rejectWithdrawal(id: string, notes: string) {
     .update({ status: 'rejected', admin_notes: notes || null, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) return { error: error.message };
+  try {
+    const { data: w } = await adminClient
+      .from('withdrawals')
+      .select('expert_id')
+      .eq('id', id)
+      .single();
+    if (w?.expert_id) {
+      await adminClient.from('notifications').insert({
+        recipient_user_id: w.expert_id,
+        type: 'withdrawal_rejected',
+        title: 'Retiro rechazado',
+        body: String(notes || ''),
+        data: { withdrawal_id: id },
+        status: 'unread',
+      });
+    }
+  } catch {}
   revalidatePath('/admin/withdrawals');
   return { success: true };
 }

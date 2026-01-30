@@ -12,6 +12,7 @@ interface Service {
     id: string;
     title: string;
     price: number;
+    currency?: string;
     duration?: number;
     location?: string;
     description?: string;
@@ -29,6 +30,17 @@ export default function ServiceCard({ service }: ServiceCardProps) {
     const router = useRouter();
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    const formatAmount = (cur: string | undefined, amount: number) => {
+        const c = cur || 'USD'
+        if (c === 'COP') {
+            return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Math.round(amount));
+        }
+        if (c === 'EUR') {
+            return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
+        }
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    };
 
     const handleDelete = async () => {
         setIsDeleting(true);
@@ -98,7 +110,7 @@ export default function ServiceCard({ service }: ServiceCardProps) {
                             {service.title}
                         </h3>
                         <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'rgb(var(--primary))', whiteSpace: 'nowrap' }}>
-                            ${service.price}
+                            {formatAmount(service.currency, service.price)}
                         </div>
                     </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, Users, Video, Settings, LogOut, ShoppingBag, DollarSign, Wallet, ShieldAlert } from 'lucide-react';
 import styles from './Sidebar.module.css';
@@ -20,6 +21,7 @@ const MENU_ITEMS = [
 export const Sidebar = () => {
     const pathname = usePathname();
     const router = useRouter();
+    const [isOpen, setIsOpen] = useState(false);
 
     const handleLogout = async () => {
         const supabase = createClient();
@@ -28,8 +30,18 @@ export const Sidebar = () => {
         router.refresh();
     };
 
+    useEffect(() => {
+        const handler = () => setIsOpen(prev => !prev);
+        window.addEventListener('dashboard:toggleSidebar', handler as EventListener);
+        return () => window.removeEventListener('dashboard:toggleSidebar', handler as EventListener);
+    }, []);
+
+    // Intentionally avoid setState within effects per lint rule
+
     return (
-        <aside className={styles.sidebar}>
+        <>
+        {isOpen && <div className={styles.overlay} onClick={() => setIsOpen(false)} />}
+        <aside id="dashboard-sidebar" className={`${styles.sidebar} ${isOpen ? styles.open : ''}`} role="navigation">
             <div className={styles.header}>
                 <span className={styles.logo}>Lookatfy<span className={styles.badge}>Admin</span></span>
             </div>
@@ -59,5 +71,6 @@ export const Sidebar = () => {
                 </button>
             </div>
         </aside>
+        </>
     );
 };

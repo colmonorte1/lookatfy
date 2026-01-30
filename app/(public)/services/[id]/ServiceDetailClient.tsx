@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Star, Clock, MapPin, CheckCircle, Calendar, CreditCard, ChevronLeft, ChevronRight, ShieldCheck, Video, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
+import styles from './ServiceDetailClient.module.css';
 import Link from 'next/link';
 import { ReviewsList } from '@/components/ui/Reviews/ReviewsList';
 import { BookingCalendar } from '@/components/ui/Calendar/BookingCalendar';
@@ -56,7 +57,16 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const router = useRouter();
-    const priceLabel = new Intl.NumberFormat('es-ES', { style: 'currency', currency: service.currency || 'USD' }).format(Number(service.price) || 0);
+    const formatAmount = (cur: string, amount: number) => {
+        if (cur === 'COP') {
+            return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Math.round(amount));
+        }
+        if (cur === 'EUR') {
+            return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
+        }
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    };
+    const priceLabel = formatAmount(service.currency || 'USD', Number(service.price) || 0);
     const country = service.country || expert.country || 'Global';
 
     const formattedReviews = (reviews || []).map((r) => ({
@@ -117,15 +127,14 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
 
     return (
         <main style={{ paddingBottom: '4rem', background: 'rgb(var(--background))', minHeight: '100vh' }}>
-            {/* Header Image */}
-            <div style={{ height: '400px', width: '100%', position: 'relative', overflow: 'hidden' }}>
+            <div className={styles.hero}>
                 <img
                     src={serviceImage}
                     alt={service.title}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)' }} />
-                <div className="container" style={{ position: 'absolute', bottom: '2rem', left: '0', right: '0', color: 'white' }}>
+                <div className={styles.heroOverlay} />
+                <div className={`container ${styles.heroContent}`}>
                     <Link href="/" style={{ color: 'white', display: 'inline-flex', alignItems: 'center', marginBottom: '1rem', textDecoration: 'none', background: 'rgba(0,0,0,0.3)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-full)' }}>
                         <ChevronLeft size={16} /> Volver
                     </Link>
@@ -135,8 +144,8 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                             <Video size={14} /> {service.type}
                         </span>
                     </div>
-                    <h1 style={{ fontSize: '2.5rem', fontWeight: 700, marginBottom: '0.5rem', color: 'white' }}>{service.title}</h1>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '1rem' }}>
+                    <h1 className={styles.heroTitle}>{service.title}</h1>
+                    <div className={styles.heroMeta}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Star fill="currentColor" color="rgb(var(--warning))" size={18} /> {serviceAvg} ({formattedReviews.length} reseñas del servicio)</span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Clock size={18} /> {service.duration} mins</span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><MapPin size={18} /> {country}</span>
@@ -144,21 +153,12 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                 </div>
             </div>
 
-            <div className="container" style={{ marginTop: '2rem', display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '3rem' }}>
+            <div className={`container ${styles.mainGrid}`}>
 
                 {/* Left Column: Details */}
                 <div>
                     {/* Expert Profile Card */}
-                    <div style={{
-                        background: 'rgb(var(--surface))',
-                        padding: '1.5rem',
-                        borderRadius: 'var(--radius-lg)',
-                        border: '1px solid rgb(var(--border))',
-                        marginBottom: '2rem',
-                        display: 'flex',
-                        gap: '1.5rem',
-                        alignItems: 'start'
-                    }}>
+                    <div className={styles.expertCard}>
                         <img
                             src={expertAvatar}
                             alt={expertName}
@@ -207,7 +207,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                     </div>
 
                     <div style={{ marginBottom: '2rem' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                        <div className={styles.twoCol}>
                             <div>
                                 <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem', color: 'rgb(var(--text-main))' }}>
                                     Lo que incluye
@@ -241,7 +241,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                     </div>
 
                     <div style={{ marginBottom: '2rem' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                        <div className={styles.twoCol}>
                             <div>
                                 <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem', color: 'rgb(var(--text-main))' }}>
                                     Qué obtienes
@@ -288,15 +288,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
 
                 {/* Right Column: Booking Widget */}
                 <div>
-                    <div style={{
-                        background: 'rgb(var(--surface))',
-                        padding: '1.5rem',
-                        borderRadius: 'var(--radius-lg)',
-                        border: '1px solid rgb(var(--border))',
-                        position: 'sticky',
-                        top: '2rem',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.05)'
-                    }}>
+                    <div className={styles.stickyCard}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgb(var(--border))' }}>
                             <div>
                                 <span style={{ fontSize: '1.75rem', fontWeight: 700 }}>

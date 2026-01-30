@@ -1,0 +1,100 @@
+.hero {
+    height: 400px;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.heroOverlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+}
+
+.heroContent {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 2rem;
+    color: white;
+    padding: 0 1rem;
+}
+
+.heroTitle {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: white;
+}
+
+.heroMeta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 1rem;
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+}
+
+.mainGrid {
+    margin-top: 2rem;
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 3rem;
+}
+
+.expertCard {
+    background: rgb(var(--surface));
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgb(var(--border));
+    margin-bottom: 2rem;
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+
+.twoCol {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+}
+
+.stickyCard {
+    background: rgb(var(--surface));
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgb(var(--border));
+    position: sticky;
+    top: 2rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+
+@media (max-width: 1024px) {
+    .mainGrid {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .hero {
+        height: 240px;
+    }
+
+    .heroTitle {
+        font-size: 1.5rem;
+    }
+
+    .expertCard {
+        flex-direction: column;
+    }
+
+    .twoCol {
+        grid-template-columns: 1fr;
+    }
+
+    .stickyCard {
+        position: static;
+    }
+}
