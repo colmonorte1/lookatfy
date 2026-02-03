@@ -9,6 +9,20 @@ const getBaseUrl = () => {
 
 export async function GET() {
   try {
+    const isProd = process.env.NODE_ENV === 'production'
+
+    // En sandbox, usar bancos de prueba específicos que funcionan
+    if (!isProd) {
+      const testBanks = [
+        { code: '1022', name: 'BANCO UNION COLOMBIANO' },
+        { code: '1040', name: 'BANCO AGRARIO' },
+        { code: '1507', name: 'NEQUI' },
+        { code: '1551', name: 'DAVIPLATA' },
+      ]
+      return NextResponse.json({ data: testBanks })
+    }
+
+    // En producción, obtener la lista real de Wompi
     const url = `${getBaseUrl()}/pse/financial_institutions`
     const privateKey = process.env.WOMPI_PRIVATE_KEY || ''
     const publicKey = process.env.NEXT_PUBLIC_WOMPI_PUBLIC_KEY || ''
@@ -23,7 +37,7 @@ export async function GET() {
     }
     const data = await res.json()
     let list = Array.isArray(data?.data) ? data.data.map((b: any) => ({ code: String(b?.code || ''), name: String(b?.name || '') })).filter((b: any) => b.code && b.name) : []
-    if (!list.length) list = [{ code: 'BANCOLOMBIA', name: 'Bancolombia' }]
+    if (!list.length) list = [{ code: '1022', name: 'BANCO UNION COLOMBIANO' }]
     return NextResponse.json({ data: list })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Error obteniendo bancos PSE' }, { status: 400 })

@@ -11,7 +11,7 @@ export async function GET() {
     data: {
       transaction: {
         id: 'test-12345',
-        reference: 'TU_BOOKING_ID_AQUI', // Cambia esto por un booking_id real de tu DB
+        reference: '25ce63f3-2a99-4413-842e-9c2687e0b786', // Cambia esto por un booking_id real de tu DB
         status: 'APPROVED',
         amount_in_cents: 100000,
         customer_email: 'test@example.com',

@@ -72,82 +72,115 @@ export default function AdminDashboardClient({
     }
   }, []);
 
+  // Debounced localStorage writes to avoid excessive writes
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('admin_range', String(range));
-    }
-  }, [range]);
+    if (!mounted) return;
+    const timer = setTimeout(() => {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('admin_range', String(range));
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [range, mounted]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('admin_range_start', customStart || '');
-      window.localStorage.setItem('admin_range_end', customEnd || '');
-      window.localStorage.setItem('admin_range_use_custom', useCustom ? '1' : '0');
-    }
-  }, [customStart, customEnd, useCustom]);
+    if (!mounted) return;
+    const timer = setTimeout(() => {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('admin_range_start', customStart || '');
+        window.localStorage.setItem('admin_range_end', customEnd || '');
+        window.localStorage.setItem('admin_range_use_custom', useCustom ? '1' : '0');
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [customStart, customEnd, useCustom, mounted]);
 
   const now = useMemo(() => (mounted ? new Date() : new Date(0)), [mounted]);
   const activeWindow = useMemo(() => {
     if (useCustom && customStart && customEnd) {
       const start = new Date(customStart);
       const end = new Date(new Date(customEnd).setHours(23, 59, 59, 999));
-      return { start, end };
+      return { start, end, startTs: start.getTime(), endTs: end.getTime() };
     }
     const start = new Date(now);
     start.setDate(start.getDate() - range);
     const end = new Date(now);
-    return { start, end };
+    return { start, end, startTs: start.getTime(), endTs: end.getTime() };
   }, [useCustom, customStart, customEnd, range, now]);
+
+  // Pre-process bookings with timestamps for performance (avoid repeated Date creation)
+  const bookingsWithTs = useMemo(() => {
+    return bookings.map(b => ({
+      ...b,
+      timestamp: new Date(b.created_at).getTime()
+    }));
+  }, [bookings]);
+
   const filteredBookings = useMemo(() => {
-    if (useCustom && customStart && customEnd) {
-      const startTs = new Date(customStart).getTime();
-      const endTs = new Date(new Date(customEnd).setHours(23, 59, 59, 999)).getTime();
-      return bookings.filter(b => {
-        const ts = new Date(b.created_at).getTime();
-        return !isNaN(ts) && ts >= startTs && ts <= endTs;
-      });
-    }
-    const cutoff = new Date(now);
-    cutoff.setDate(cutoff.getDate() - range);
-    return bookings.filter(b => {
-      const ts = new Date(b.created_at).getTime();
-      return !isNaN(ts) && ts >= cutoff.getTime();
+    return bookingsWithTs.filter(b => {
+      return !isNaN(b.timestamp) && b.timestamp >= activeWindow.startTs && b.timestamp <= activeWindow.endTs;
     });
-  }, [bookings, range, now, useCustom, customStart, customEnd]);
+  }, [bookingsWithTs, activeWindow]);
+
+  // Pre-process disputes with timestamps for performance (avoid repeated Date creation)
+  const disputesWithTs = useMemo(() => {
+    return disputes.map(d => ({
+      ...d,
+      timestamp: new Date(d.created_at).getTime()
+    }));
+  }, [disputes]);
 
   const filteredDisputes = useMemo(() => {
-    if (useCustom && customStart && customEnd) {
-      const startTs = new Date(customStart).getTime();
-      const endTs = new Date(new Date(customEnd).setHours(23, 59, 59, 999)).getTime();
-      return disputes.filter(d => {
-        const ts = new Date(d.created_at).getTime();
-        return !isNaN(ts) && ts >= startTs && ts <= endTs;
-      });
-    }
-    const cutoff = new Date(now);
-    cutoff.setDate(cutoff.getDate() - range);
-    return disputes.filter(d => {
-      const ts = new Date(d.created_at).getTime();
-      return !isNaN(ts) && ts >= cutoff.getTime();
+    return disputesWithTs.filter(d => {
+      return !isNaN(d.timestamp) && d.timestamp >= activeWindow.startTs && d.timestamp <= activeWindow.endTs;
     });
-  }, [disputes, range, now, useCustom, customStart, customEnd]);
+  }, [disputesWithTs, activeWindow]);
 
   const txCount = filteredBookings.length;
-  const volume = filteredBookings.reduce((s, b) => s + b.price, 0);
+
+  // Multi-currency support: group volumes by currency
+  const volumeByCurrency = useMemo(() => {
+    const currencies = new Map<string, number>();
+    filteredBookings.forEach(b => {
+      const currency = b.currency || 'USD';
+      currencies.set(currency, (currencies.get(currency) || 0) + b.price);
+    });
+    return currencies;
+  }, [filteredBookings]);
+
+  // Primary currency (most used) and its volume
+  const primaryCurrency = useMemo(() => {
+    let maxCurrency = 'USD';
+    let maxCount = 0;
+    const currencyCounts = new Map<string, number>();
+
+    filteredBookings.forEach(b => {
+      const currency = b.currency || 'USD';
+      const count = (currencyCounts.get(currency) || 0) + 1;
+      currencyCounts.set(currency, count);
+      if (count > maxCount) {
+        maxCount = count;
+        maxCurrency = currency;
+      }
+    });
+
+    return maxCurrency;
+  }, [filteredBookings]);
+
+  const volume = volumeByCurrency.get(primaryCurrency) || 0;
   const fees = volume * commissionRate;
+  const hasMultipleCurrencies = volumeByCurrency.size > 1;
 
   const txWeekly = useMemo(() => {
     const buckets: { label: string; count: number }[] = [];
     const weekMs = 7 * 24 * 60 * 60 * 1000;
-    const totalWeeks = Math.max(1, Math.ceil((activeWindow.end.getTime() - activeWindow.start.getTime()) / weekMs));
+    const totalWeeks = Math.max(1, Math.ceil((activeWindow.endTs - activeWindow.startTs) / weekMs));
     const maxWeeks = Math.min(totalWeeks, 12);
     for (let i = 0; i < maxWeeks; i++) {
-      const start = new Date(activeWindow.start.getTime() + i * weekMs);
-      const end = new Date(start.getTime() + weekMs);
-      const count = filteredBookings.filter(b => {
-        const t = new Date(b.created_at).getTime();
-        return t >= start.getTime() && t < end.getTime();
-      }).length;
+      const startTs = activeWindow.startTs + i * weekMs;
+      const endTs = startTs + weekMs;
+      const start = new Date(startTs);
+      const count = filteredBookings.filter(b => b.timestamp >= startTs && b.timestamp < endTs).length;
       buckets.push({ label: `${start.getMonth() + 1}/${start.getDate()}`, count });
     }
     return buckets;
@@ -159,13 +192,20 @@ export default function AdminDashboardClient({
     const startMonth = activeWindow.start.getMonth();
     const endYear = activeWindow.end.getFullYear();
     const endMonth = activeWindow.end.getMonth();
+
+    // Pre-process bookings with year/month for efficient grouping
+    const bookingsByMonth = new Map<string, number>();
+    filteredBookings.forEach(b => {
+      const date = new Date(b.timestamp);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      bookingsByMonth.set(key, (bookingsByMonth.get(key) || 0) + 1);
+    });
+
     let y = startYear;
     let m = startMonth;
     while (y < endYear || (y === endYear && m <= endMonth)) {
-      const count = filteredBookings.filter(b => {
-        const t = new Date(b.created_at);
-        return t.getFullYear() === y && t.getMonth() === m;
-      }).length;
+      const key = `${y}-${m}`;
+      const count = bookingsByMonth.get(key) || 0;
       buckets.push({ label: `${y}-${String(m + 1).padStart(2, '0')}`, count });
       m++;
       if (m > 11) { m = 0; y++; }
@@ -177,15 +217,13 @@ export default function AdminDashboardClient({
   const disputesWeekly = useMemo(() => {
     const buckets: { label: string; count: number }[] = [];
     const weekMs = 7 * 24 * 60 * 60 * 1000;
-    const totalWeeks = Math.max(1, Math.ceil((activeWindow.end.getTime() - activeWindow.start.getTime()) / weekMs));
+    const totalWeeks = Math.max(1, Math.ceil((activeWindow.endTs - activeWindow.startTs) / weekMs));
     const maxWeeks = Math.min(totalWeeks, 12);
     for (let i = 0; i < maxWeeks; i++) {
-      const start = new Date(activeWindow.start.getTime() + i * weekMs);
-      const end = new Date(start.getTime() + weekMs);
-      const count = filteredDisputes.filter(d => {
-        const t = new Date(d.created_at).getTime();
-        return t >= start.getTime() && t < end.getTime();
-      }).length;
+      const startTs = activeWindow.startTs + i * weekMs;
+      const endTs = startTs + weekMs;
+      const start = new Date(startTs);
+      const count = filteredDisputes.filter(d => d.timestamp >= startTs && d.timestamp < endTs).length;
       buckets.push({ label: `${start.getMonth() + 1}/${start.getDate()}`, count });
     }
     return buckets;
@@ -197,13 +235,20 @@ export default function AdminDashboardClient({
     const startMonth = activeWindow.start.getMonth();
     const endYear = activeWindow.end.getFullYear();
     const endMonth = activeWindow.end.getMonth();
+
+    // Pre-process disputes with year/month for efficient grouping
+    const disputesByMonth = new Map<string, number>();
+    filteredDisputes.forEach(d => {
+      const date = new Date(d.timestamp);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      disputesByMonth.set(key, (disputesByMonth.get(key) || 0) + 1);
+    });
+
     let y = startYear;
     let m = startMonth;
     while (y < endYear || (y === endYear && m <= endMonth)) {
-      const count = filteredDisputes.filter(x => {
-        const t = new Date(x.created_at);
-        return t.getFullYear() === y && t.getMonth() === m;
-      }).length;
+      const key = `${y}-${m}`;
+      const count = disputesByMonth.get(key) || 0;
       buckets.push({ label: `${y}-${String(m + 1).padStart(2, '0')}`, count });
       m++;
       if (m > 11) { m = 0; y++; }
@@ -214,21 +259,27 @@ export default function AdminDashboardClient({
 
   const byCountry = useMemo(() => {
     const map = new Map<string, number>();
-    filteredBookings.forEach(b => {
-      const key = String(b.service_country || 'N/A');
-      map.set(key, (map.get(key) || 0) + b.price);
-    });
+    // Only use bookings in primary currency to avoid mixing currencies
+    filteredBookings
+      .filter(b => (b.currency || 'USD') === primaryCurrency)
+      .forEach(b => {
+        const key = String(b.service_country || 'N/A');
+        map.set(key, (map.get(key) || 0) + b.price);
+      });
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [filteredBookings]);
+  }, [filteredBookings, primaryCurrency]);
 
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
-    filteredBookings.forEach(b => {
-      const key = String(b.service_category || 'N/A');
-      map.set(key, (map.get(key) || 0) + b.price);
-    });
+    // Only use bookings in primary currency to avoid mixing currencies
+    filteredBookings
+      .filter(b => (b.currency || 'USD') === primaryCurrency)
+      .forEach(b => {
+        const key = String(b.service_category || 'N/A');
+        map.set(key, (map.get(key) || 0) + b.price);
+      });
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [filteredBookings]);
+  }, [filteredBookings, primaryCurrency]);
 
   const refundsInRange = useMemo(() => filteredDisputes.filter(d => d.status === 'resolved_refunded'), [filteredDisputes]);
   const refundRate = txCount ? refundsInRange.length / txCount : 0;
@@ -271,8 +322,15 @@ export default function AdminDashboardClient({
         </div>
         <div style={{ marginLeft: 'auto', color: 'rgb(var(--text-secondary))', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <span>Tx: {txCount}</span>
-          <span>Volumen: {formatMoney(volume, filteredBookings[0]?.currency || 'USD')}</span>
-          <span>Fee: {formatMoney(fees, filteredBookings[0]?.currency || 'USD')}</span>
+          <span>
+            Volumen: {formatMoney(volume, primaryCurrency)}
+            {hasMultipleCurrencies && (
+              <span style={{ fontSize: '0.75rem', marginLeft: '0.25rem', color: 'rgb(var(--warning))' }} title="Múltiples divisas detectadas">
+                ({volumeByCurrency.size} divisas)
+              </span>
+            )}
+          </span>
+          <span>Fee: {formatMoney(fees, primaryCurrency)}</span>
         </div>
       </div>
 
@@ -372,7 +430,7 @@ export default function AdminDashboardClient({
                   <div style={{ width: `${Math.min(100, (val / byCountry[0][1]) * 100)}%`, height: '10px', borderRadius: '6px', background: 'rgb(var(--primary))' }} />
                 </div>
                 <div style={{ minWidth: '140px', textAlign: 'right', fontSize: '0.9rem' }}>{country}</div>
-                <div style={{ minWidth: '160px', textAlign: 'right', fontWeight: 600 }}>{formatMoney(val, filteredBookings[0]?.currency || 'USD')}</div>
+                <div style={{ minWidth: '160px', textAlign: 'right', fontWeight: 600 }}>{formatMoney(val, primaryCurrency)}</div>
               </div>
             ))
           )}
@@ -388,7 +446,7 @@ export default function AdminDashboardClient({
                   <div style={{ width: `${Math.min(100, (val / byCategory[0][1]) * 100)}%`, height: '10px', borderRadius: '6px', background: 'rgb(var(--primary))' }} />
                 </div>
                 <div style={{ minWidth: '140px', textAlign: 'right', fontSize: '0.9rem' }}>{cat}</div>
-                <div style={{ minWidth: '160px', textAlign: 'right', fontWeight: 600 }}>{formatMoney(val, filteredBookings[0]?.currency || 'USD')}</div>
+                <div style={{ minWidth: '160px', textAlign: 'right', fontWeight: 600 }}>{formatMoney(val, primaryCurrency)}</div>
               </div>
             ))
           )}

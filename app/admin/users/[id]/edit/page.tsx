@@ -1,43 +1,55 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
-import { redirect } from 'next/navigation';
-import NewUserForm from './NewUserForm';
+import { notFound, redirect } from 'next/navigation';
+import EditUserForm from './EditUserForm';
 
-export default async function NewUserPage() {
+export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params;
     const supabase = await createClient();
 
     // Authentication and authorization check
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
-        redirect('/login?redirect=/admin/users/new');
+        redirect('/login?redirect=/admin/users/' + id + '/edit');
     }
 
     // Check if user is admin
-    const { data: profile, error: profileError } = await supabase
+    const { data: adminProfile, error: adminProfileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single();
 
-    if (profileError || !profile || profile.role !== 'admin') {
+    if (adminProfileError || !adminProfile || adminProfile.role !== 'admin') {
         redirect('/');
+    }
+
+    // Fetch user to edit
+    const { data: userToEdit, error: userError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (userError || !userToEdit) {
+        notFound();
     }
 
     return (
         <div style={{ maxWidth: '600px' }}>
             <div style={{ marginBottom: '2rem' }}>
-                <Link href="/admin/users" style={{
+                <Link href={`/admin/users/${id}`} style={{
                     display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
                     color: 'rgb(var(--text-secondary))', marginBottom: '1rem', fontSize: '0.9rem'
                 }}>
                     <ArrowLeft size={16} />
-                    Volver al listado
+                    Volver al perfil
                 </Link>
-                <h1 style={{ fontSize: '2rem' }}>Crear Nuevo Usuario</h1>
+                <h1 style={{ fontSize: '2rem' }}>Editar Usuario</h1>
                 <p style={{ color: 'rgb(var(--text-secondary))', marginTop: '0.5rem' }}>
-                    Los nuevos usuarios recibirán un email de confirmación para establecer su contraseña.
+                    {userToEdit.full_name || userToEdit.email}
                 </p>
             </div>
 
@@ -47,7 +59,7 @@ export default async function NewUserPage() {
                 borderRadius: 'var(--radius-lg)',
                 border: '1px solid rgb(var(--border))'
             }}>
-                <NewUserForm />
+                <EditUserForm user={userToEdit} />
             </div>
         </div>
     );

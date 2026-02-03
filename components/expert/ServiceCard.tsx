@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from '@/components/ui/Button/Button';
-import { Edit2, Trash2, MapPin, Clock, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Edit2, Trash2, MapPin, Clock, AlertTriangle, CheckCircle, XCircle, Copy } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useState } from 'react';
@@ -20,6 +20,7 @@ interface Service {
     type?: string;
     includes?: string[];
     not_includes?: string[];
+    status?: string;
 }
 
 interface ServiceCardProps {
@@ -30,6 +31,8 @@ export default function ServiceCard({ service }: ServiceCardProps) {
     const router = useRouter();
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isTogglingStatus, setIsTogglingStatus] = useState(false);
+    const [isDuplicating, setIsDuplicating] = useState(false);
 
     const formatAmount = (cur: string | undefined, amount: number) => {
         const c = cur || 'USD'
@@ -40,6 +43,29 @@ export default function ServiceCard({ service }: ServiceCardProps) {
             return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
         }
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    };
+
+    const handleToggleStatus = async () => {
+        setIsTogglingStatus(true);
+        try {
+            const supabase = createClient();
+            const currentStatus = service.status || 'active';
+            const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+
+            const { error } = await supabase
+                .from('services')
+                .update({ status: newStatus })
+                .eq('id', service.id);
+
+            if (error) throw error;
+
+            router.refresh();
+        } catch (error) {
+            console.error("Error toggling service status:", error);
+            alert("No se pudo cambiar el estado del servicio.");
+        } finally {
+            setIsTogglingStatus(false);
+        }
     };
 
     const handleDelete = async () => {
@@ -61,6 +87,52 @@ export default function ServiceCard({ service }: ServiceCardProps) {
             alert("No se pudo eliminar el servicio.");
         } finally {
             setIsDeleting(false);
+        }
+    };
+
+    const handleDuplicate = async () => {
+        if (!confirm(`¿Duplicar "${service.title}"? Se creará una copia exacta del servicio.`)) return;
+
+        setIsDuplicating(true);
+        try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+
+            if (!user) {
+                alert("Debes iniciar sesión para duplicar servicios.");
+                return;
+            }
+
+            // Create a copy of the service with a new title
+            const duplicatedService = {
+                expert_id: user.id,
+                title: `${service.title} (Copia)`,
+                price: service.price,
+                currency: service.currency,
+                duration: service.duration,
+                location: service.location,
+                description: service.description,
+                image_url: service.image_url,
+                type: service.type,
+                includes: service.includes,
+                not_includes: service.not_includes,
+                status: 'inactive', // Start as inactive so expert can review before activating
+                category: service.category
+            };
+
+            const { error } = await supabase
+                .from('services')
+                .insert([duplicatedService]);
+
+            if (error) throw error;
+
+            alert("Servicio duplicado exitosamente. Se creó como 'Inactivo' para que puedas revisarlo.");
+            router.refresh();
+        } catch (error) {
+            console.error("Error duplicating service:", error);
+            alert("No se pudo duplicar el servicio.");
+        } finally {
+            setIsDuplicating(false);
         }
     };
 
@@ -100,6 +172,18 @@ export default function ServiceCard({ service }: ServiceCardProps) {
                         textTransform: 'capitalize'
                     }}>
                         {service.type || 'General'}
+                    </span>
+                    {/* Status Badge */}
+                    <span style={{
+                        position: 'absolute', top: '1rem', left: '1rem',
+                        background: (service.status === 'inactive') ? 'rgba(var(--warning), 0.9)' : 'rgba(var(--success), 0.9)',
+                        backdropFilter: 'blur(4px)',
+                        color: 'white', fontSize: '0.7rem', fontWeight: 600,
+                        padding: '0.25rem 0.6rem', borderRadius: '1rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                    }}>
+                        {(service.status === 'inactive') ? 'Inactivo' : 'Activo'}
                     </span>
                 </div>
 
@@ -160,19 +244,57 @@ export default function ServiceCard({ service }: ServiceCardProps) {
                         )}
                     </div>
 
-                    <div style={{ marginTop: 'auto', display: 'flex', gap: '0.5rem' }}>
-                        <Link href={`/expert/services/${service.id}/edit`} style={{ flex: 1 }}>
-                            <Button variant="outline" style={{ width: '100%', justifyContent: 'center', gap: '0.5rem' }}>
-                                <Edit2 size={16} /> Editar
+                    <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {/* Status Toggle */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem', background: 'rgb(var(--background))', borderRadius: 'var(--radius-md)' }}>
+                            <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>
+                                {(service.status === 'inactive') ? 'Servicio Inactivo' : 'Servicio Activo'}
+                            </span>
+                            <button
+                                onClick={handleToggleStatus}
+                                disabled={isTogglingStatus}
+                                style={{
+                                    width: '44px', height: '24px',
+                                    background: (service.status === 'inactive') ? 'rgb(var(--text-muted))' : 'rgb(var(--success))',
+                                    borderRadius: '12px', position: 'relative', cursor: 'pointer',
+                                    transition: 'background 0.2s', border: 'none', flexShrink: 0,
+                                    opacity: isTogglingStatus ? 0.6 : 1
+                                }}
+                                title={(service.status === 'inactive') ? 'Activar servicio' : 'Desactivar servicio'}
+                            >
+                                <div style={{
+                                    width: '20px', height: '20px', background: 'white', borderRadius: '50%',
+                                    position: 'absolute', top: '2px',
+                                    left: (service.status === 'inactive') ? '2px' : '22px',
+                                    transition: 'left 0.2s'
+                                }} />
+                            </button>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <Link href={`/expert/services/${service.id}/edit`} style={{ flex: 1 }}>
+                                <Button variant="outline" style={{ width: '100%', justifyContent: 'center', gap: '0.5rem' }}>
+                                    <Edit2 size={16} /> Editar
+                                </Button>
+                            </Link>
+                            <Button
+                                variant="outline"
+                                style={{ padding: '0 0.75rem' }}
+                                onClick={handleDuplicate}
+                                disabled={isDuplicating}
+                                title="Duplicar servicio"
+                            >
+                                <Copy size={18} />
                             </Button>
-                        </Link>
-                        <Button
-                            variant="ghost"
-                            style={{ color: 'rgb(var(--error))', padding: '0 0.75rem' }}
-                            onClick={() => setIsDeleteModalOpen(true)}
-                        >
-                            <Trash2 size={18} />
-                        </Button>
+                            <Button
+                                variant="ghost"
+                                style={{ color: 'rgb(var(--error))', padding: '0 0.75rem' }}
+                                onClick={() => setIsDeleteModalOpen(true)}
+                            >
+                                <Trash2 size={18} />
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </div>

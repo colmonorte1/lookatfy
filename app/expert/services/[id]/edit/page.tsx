@@ -298,6 +298,23 @@ export default function EditServicePage({ params }: { params: Promise<{ id: stri
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
+
+            // Validate file size (2MB max)
+            const maxSize = 2 * 1024 * 1024; // 2MB in bytes
+            if (file.size > maxSize) {
+                alert('La imagen es demasiado grande. El tamaño máximo es 2MB.');
+                e.target.value = ''; // Clear the input
+                return;
+            }
+
+            // Validate file type
+            const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+            if (!validTypes.includes(file.type)) {
+                alert('Formato de imagen no válido. Usa JPG, PNG o WebP.');
+                e.target.value = ''; // Clear the input
+                return;
+            }
+
             setImageFile(file);
             setPreviewUrl(URL.createObjectURL(file));
         }
@@ -305,6 +322,28 @@ export default function EditServicePage({ params }: { params: Promise<{ id: stri
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // VALIDATION FIRST - Before starting any async operations
+        const p = parseFloat(price);
+        const d = parseInt(duration);
+        setPriceError(isNaN(p) || p < 5 ? 'Precio mínimo 5' : '');
+        setDurationError(isNaN(d) || d < 15 ? 'Duración mínima 15 minutos' : '');
+
+        if (isNaN(p) || p < 5 || isNaN(d) || d < 15) {
+            alert('Por favor corrige los errores de validación antes de guardar');
+            return;
+        }
+
+        if (title.trim().length === 0) {
+            alert('El nombre del servicio es requerido');
+            return;
+        }
+
+        if (!category) {
+            alert('Debes seleccionar una categoría');
+            return;
+        }
+
         setIsLoading(true);
 
         try {
@@ -329,15 +368,6 @@ export default function EditServicePage({ params }: { params: Promise<{ id: stri
 
                 const { data } = supabase.storage.from('service-images').getPublicUrl(filePath);
                 finalImageUrl = data.publicUrl;
-            }
-
-            // Basic validation
-            const p = parseFloat(price);
-            const d = parseInt(duration);
-            setPriceError(isNaN(p) || p < 5 ? 'Precio mínimo 5' : '');
-            setDurationError(isNaN(d) || d < 15 ? 'Duración mínima 15 minutos' : '');
-            if (isNaN(p) || p < 5 || isNaN(d) || d < 15) {
-                throw new Error('Corrige los campos de precio y duración');
             }
 
             const typeCanonical = (type === 'Virtual' || type === 'Presencial') ? type : normalizeServiceType(type) || null;
@@ -404,14 +434,15 @@ export default function EditServicePage({ params }: { params: Promise<{ id: stri
     };
 
     const handleDelete = async () => {
-        if (!confirm("¿Estás seguro de eliminar este servicio?")) return;
+        if (!confirm("¿Estás seguro de eliminar este servicio? El servicio dejará de ser visible para los clientes.")) return;
         setIsLoading(true);
 
         try {
             const supabase = createClient();
+            // Soft delete: update status to 'deleted' instead of hard delete
             const { error } = await supabase
                 .from('services')
-                .delete()
+                .update({ status: 'deleted' })
                 .eq('id', id);
 
             if (error) throw error;
@@ -420,6 +451,7 @@ export default function EditServicePage({ params }: { params: Promise<{ id: stri
             router.refresh();
         } catch (error) {
             console.error("Error deleting service:", error);
+            alert("No se pudo eliminar el servicio.");
         } finally {
             setIsLoading(false);
         }

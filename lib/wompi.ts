@@ -77,6 +77,7 @@ export const createTransaction = async (input: {
   acceptanceToken: string
   paymentMethodType?: PaymentMethodType
   paymentMethod?: PSEPaymentMethod | NequiPaymentMethod | DaviplataPaymentMethod | Record<string, unknown>
+  redirectUrl?: string
 }) => {
   const url = `${getBaseUrl()}/transactions`
   const body: Record<string, unknown> = {
@@ -89,6 +90,7 @@ export const createTransaction = async (input: {
   if (input.paymentSourceId) body.payment_source_id = input.paymentSourceId
   if (input.paymentMethodType) body.payment_method_type = input.paymentMethodType
   if (input.paymentMethod) body.payment_method = input.paymentMethod
+  if (input.redirectUrl) body.redirect_url = input.redirectUrl
   // Generate integrity signature
   const integritySecret = process.env.WOMPI_INTEGRITY_SECRET
   if (!integritySecret) {

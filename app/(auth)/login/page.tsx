@@ -53,19 +53,48 @@ export default function LoginPage() {
 
             if (user) {
                 // Fetch role from profiles table (Source of Truth)
-                const { data: profile } = await supabase
+                const { data: profile, error: profileError } = await supabase
                     .from('profiles')
-                    .select('role')
+                    .select('role, email, full_name')
                     .eq('id', user.id)
                     .single();
 
+                // Debug logging (only in development)
+                if (process.env.NODE_ENV === 'development') {
+                    console.log('🔐 Login Debug Info:');
+                    console.log('User ID:', user.id);
+                    console.log('Email:', user.email);
+                    console.log('Profile Data:', profile);
+                    console.log('Profile Error:', profileError);
+                    console.log('Role from profile:', profile?.role);
+                    console.log('Role from metadata:', user.user_metadata?.role);
+                }
+
+                // Check if user is suspended or deleted
+                if (profile?.status === 'suspended') {
+                    await supabase.auth.signOut();
+                    setError('Tu cuenta ha sido suspendida. Contacta al administrador para más información.');
+                    return;
+                }
+
+                if (profile?.status === 'deleted' || profile?.deleted_at) {
+                    await supabase.auth.signOut();
+                    setError('Esta cuenta ha sido eliminada. Contacta al administrador si crees que es un error.');
+                    return;
+                }
+
                 const role = profile?.role || user.user_metadata?.role || 'client';
 
+                console.log('🎯 Redirecting user with role:', role);
+
                 if (role === 'expert') {
+                    console.log('→ Redirecting to /expert');
                     router.push('/expert');
                 } else if (role === 'admin') {
+                    console.log('→ Redirecting to /admin');
                     router.push('/admin');
                 } else {
+                    console.log('→ Redirecting to /user');
                     router.push('/user');
                 }
 

@@ -18,6 +18,7 @@ export async function POST(request: Request) {
       payment_method_payload,
       original_amount,
       original_currency,
+      redirect_url,
     } = payload || {}
 
     try {
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
         acceptanceToken,
         paymentMethodType: payment_method_type,
         paymentMethod: payment_method_payload,
+        redirectUrl: redirect_url,
       })
     } catch (err: any) {
       return NextResponse.json({ error: err?.message || 'Error creando transacción' }, { status: 400 })

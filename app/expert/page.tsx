@@ -95,12 +95,29 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
 
     const { data: allBookings } = await supabase
         .from('bookings')
-        .select('price, status, date, duration, service_id, services(duration)') // Join services to get duration if not storing in bookings (schema says bookings has price, maybe not duration? schema says just price. wait, bookings has price.)
-        // Actually schema for bookings: date, time, status, price, service_id. Schema services: duration.
-        // Let's assume price is stored in bookings as agreed.
+        .select('id, price, status, date, service_id, services(duration)')
         .eq('expert_id', user.id);
 
+    // Fetch disputes to exclude refunded bookings from revenue calculations
+    const { data: disputes } = await supabase
+        .from('disputes')
+        .select('booking_id, status')
+        .in('status', ['open', 'under_review', 'resolved_refunded']);
+
     // --- Calculations ---
+
+    // Build sets of disputed and refunded booking IDs
+    type DisputeRow = { booking_id: string; status: string };
+    const disputedBookingIds = new Set(
+        ((disputes || []) as DisputeRow[])
+            .filter(d => d.status === 'open' || d.status === 'under_review')
+            .map(d => d.booking_id)
+    );
+    const refundedBookingIds = new Set(
+        ((disputes || []) as DisputeRow[])
+            .filter(d => d.status === 'resolved_refunded')
+            .map(d => d.booking_id)
+    );
 
     // 1. Revenue (Month or Custom Range)
     const now = new Date();
@@ -115,9 +132,11 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
     const toDate = hasRange ? new Date(String(to)) : monthEnd;
     const rangeEnd = hasRange ? new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate() + 1) : monthEnd; // inclusive end-day
 
-    const rangeRevenue = allBookings
+    type BookingWithId = { id: string; status: string; date: string; price?: number | string; services?: { duration?: number } };
+    const rangeRevenue = (allBookings as BookingWithId[] | null)
         ?.filter(b => {
             if (b.status !== 'completed') return false;
+            if (refundedBookingIds.has(b.id)) return false; // Exclude refunded bookings
             const d = new Date(String(b.date));
             return !isNaN(d.getTime()) && d >= rangeStart && d < rangeEnd;
         })
@@ -129,14 +148,9 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
     // 2. Upcoming Count
     const upcomingCount = (upcomingBookings?.length || 0);
 
-    // 3. Total Hours (Completed)
-    // Duration is in services table mostly. Need to rely on join or if we fetch services.
-    // For MVP, let's estimated based on completed count * 60 if duration missing, or fetch service duration.
-    // I requested services(duration) in allBookings query but Supabase join syntax needs careful handling.
-    // select('*, services(duration)') returns { services: { duration: 60 } }
-    // Let's assume standard 60min if complex.
-    type AllBooking = { status: string; price?: number | string; date: string; services?: { duration?: number } };
-    const completedBookings = (allBookings as AllBooking[] | undefined)?.filter(b => b.status === 'completed') || [];
+    // 3. Total Hours (Completed) - Exclude refunded bookings
+    const completedBookings = (allBookings as BookingWithId[] | null)
+        ?.filter(b => b.status === 'completed' && !refundedBookingIds.has(b.id)) || [];
     const totalMinutes = completedBookings.reduce((sum, b) => {
         const dur = b.services?.duration ?? 60;
         return sum + dur;
@@ -189,23 +203,35 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
                                 const bDate = new Date(booking.date);
                                 const day = bDate.getDate();
                                 const month = bDate.toLocaleString('es-ES', { month: 'short' }).toUpperCase().replace('.', '');
+                                const isDisputed = disputedBookingIds.has(booking.id);
+                                const isRefunded = refundedBookingIds.has(booking.id);
                                 return (
-                                    <div key={booking.id} style={{ display: 'flex', gap: '1rem', padding: '1rem', borderRadius: 'var(--radius-md)', background: 'rgb(var(--surface-hover))', alignItems: 'center' }}>
+                                    <div key={booking.id} style={{ display: 'flex', gap: '1rem', padding: '1rem', borderRadius: 'var(--radius-md)', background: 'rgb(var(--surface-hover))', alignItems: 'center', border: isDisputed ? '1px solid rgba(var(--warning), 0.3)' : 'none' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgb(var(--surface))', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgb(var(--border))', minWidth: '60px' }}>
                                             <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgb(var(--text-secondary))' }}>{month}</span>
                                             <span style={{ fontSize: '1.5rem', fontWeight: 700, lineHeight: 1 }}>{day}</span>
                                         </div>
                                         <div style={{ flex: 1 }}>
                                             <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{booking.services?.title || 'Servicio eliminado'}</div>
-                                            <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                            <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                                 <span>{booking.time.slice(0, 5)}</span>
                                                 <span>•</span>
-                                                <span style={{ background: 'rgb(var(--primary))', color: 'white', padding: '0 0.5rem', borderRadius: '1rem', fontSize: '0.75rem' }}>Confirmada</span>
+                                                {!isRefunded && !isDisputed && (
+                                                    <span style={{ background: 'rgb(var(--primary))', color: 'white', padding: '0 0.5rem', borderRadius: '1rem', fontSize: '0.75rem' }}>Confirmada</span>
+                                                )}
+                                                {isRefunded && (
+                                                    <span style={{ background: 'rgba(var(--error), 0.1)', color: 'rgb(var(--error))', padding: '0 0.5rem', borderRadius: '1rem', fontSize: '0.75rem', fontWeight: 600 }}>Reembolsada</span>
+                                                )}
+                                                {isDisputed && !isRefunded && (
+                                                    <span style={{ background: 'rgba(var(--warning), 0.1)', color: 'rgb(var(--warning))', padding: '0 0.5rem', borderRadius: '1rem', fontSize: '0.75rem', fontWeight: 600 }}>En disputa</span>
+                                                )}
                                             </div>
                                         </div>
-                                        <Link href={`/call?roomUrl=${encodeURIComponent(booking.meeting_url || '')}&userName=${encodeURIComponent(profile?.full_name || 'Experto')}&bookingId=${booking.id}`}>
-                                            <div style={{ padding: '0.5rem 1rem', background: 'rgb(var(--primary))', color: 'white', borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 500 }}>Unirse</div>
-                                        </Link>
+                                        {!isRefunded && (
+                                            <Link href={`/call?roomUrl=${encodeURIComponent(booking.meeting_url || '')}&userName=${encodeURIComponent(profile?.full_name || 'Experto')}&bookingId=${booking.id}`}>
+                                                <div style={{ padding: '0.5rem 1rem', background: 'rgb(var(--primary))', color: 'white', borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 500 }}>Unirse</div>
+                                            </Link>
+                                        )}
                                     </div>
                                 );
                             })

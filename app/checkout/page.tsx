@@ -145,21 +145,8 @@ function CheckoutContent() {
                 return;
             }
 
-            // 2. Create Daily Room (Real via API)
-            let roomUrl: string | null = null;
-            try {
-                const roomRes = await fetch('/api/daily/room', { method: 'POST' });
-                if (roomRes.ok) {
-                    const data = await roomRes.json();
-                    roomUrl = data.url || null;
-                } else {
-                    console.warn('Daily room API responded non-OK');
-                }
-            } catch (err) {
-                console.warn("Daily room creation failed", err);
-            }
-
-            // 3. Insert Booking (status pending)
+            // 2. Insert Booking (status pending)
+            // NOTE: NO creamos sala Daily.co aquí - se creará después del pago exitoso via webhook
             // Compute start_at UTC and tz metadata
             const userTz = userTimezonePref || (() => {
                 try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
@@ -173,6 +160,9 @@ function CheckoutContent() {
             const hh = Number(time.slice(0,2));
             const mm = Number(time.slice(3,5));
             const startAtUTC = buildLocalDate(y, m, d, hh, mm, expertTz);
+
+            // Establecer expiración para booking pending (1 hora desde ahora)
+            const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
             const { data: bookingRow, error: bookingError } = await supabase
                 .from('bookings')
@@ -188,7 +178,8 @@ function CheckoutContent() {
                     status: 'pending',
                     price: price, // Store base price
                     currency: currency,
-                    meeting_url: roomUrl
+                    meeting_url: null, // Will be set after payment confirmation
+                    expires_at: expiresAt // Booking expires in 1 hour if not paid
                 })
                 .select('id')
                 .single();
@@ -202,22 +193,8 @@ function CheckoutContent() {
                 }
             }
 
-            // 3b. Trigger email notification with ICS (mock provider payload)
-            try {
-                await fetch(`/api/bookings/${bookingId}/email`, { method: 'POST' });
-            } catch {}
-
-            // 3c. Trigger system notifications (user + expert)
-            try {
-                await fetch('/api/notifications/booking', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ booking_id: bookingId })
-                });
-            } catch {}
-
-            // Optional: Update profile phone/name if filled and was empty? 
-            // Skipping to avoid side effects complexity for now.
+            // NOTE: NO enviamos emails ni notificaciones aquí
+            // Se enviarán automáticamente vía webhook cuando el pago sea confirmado (APPROVED)
 
             const serviceFee = currency === 'COP' ? 2000 : 2;
             const addonsTotal = addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0);
@@ -293,6 +270,9 @@ function CheckoutContent() {
                     return;
                 }
             }
+            // Construir URL de retorno con el ID de la transacción
+            const returnUrl = `${window.location.origin}/checkout/return?id=${bookingId}`;
+
             const createRes = await fetch('/api/payments/wompi/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -304,7 +284,8 @@ function CheckoutContent() {
                     payment_method_type: paymentMethod,
                     payment_method_payload,
                     original_amount: currency !== 'COP' ? total : undefined,
-                    original_currency: currency !== 'COP' ? currency : undefined
+                    original_currency: currency !== 'COP' ? currency : undefined,
+                    redirect_url: returnUrl
                 })
             });
             if (!createRes.ok) {
