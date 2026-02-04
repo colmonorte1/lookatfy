@@ -1,12 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/Button/Button';
-import { XCircle, Video as VideoIcon } from 'lucide-react';
+import { XCircle, Video as VideoIcon, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { cancelBooking } from '@/app/user/actions';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { toISOTimeInTZ, fromUTC } from '@/utils/timezone';
+import { toISOTimeInTZ } from '@/utils/timezone';
+
+type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+interface ToastMessage {
+    id: string;
+    message: string;
+    type: ToastType;
+}
 
 interface BookingActionsProps {
     bookingId: string;
@@ -34,6 +42,21 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
     const [hasReview, setHasReview] = useState(false);
     const [existingDispute, setExistingDispute] = useState(dispute || null);
     type SimpleDispute = { id: string; status: string };
+
+    // Toast notification state
+    const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+    const showToast = useCallback((message: string, type: ToastType = 'info') => {
+        const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        setToasts(prev => [...prev, { id, message, type }]);
+        setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, 4000);
+    }, []);
+
+    const removeToast = useCallback((id: string) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+    }, []);
 
     // DateTime Parsing Logic
     const getMeetingDateTime = () => {
@@ -119,7 +142,7 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
 
     const handleCancel = async () => {
         if (!cancelReason.trim()) {
-            alert('Por favor indica el motivo de la cancelación.');
+            showToast('Por favor indica el motivo de la cancelación.', 'warning');
             return;
         }
 
@@ -129,12 +152,17 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
         setCancelModalOpen(false);
 
         if (!res.success) {
-            alert('Error al cancelar: ' + res.error);
+            showToast('Error al cancelar: ' + res.error, 'error');
+        } else {
+            showToast('Reserva cancelada correctamente.', 'success');
         }
     };
 
     const handleDispute = async () => {
-        if (!disputeDescription.trim()) return alert('Por favor describe el problema.');
+        if (!disputeDescription.trim()) {
+            showToast('Por favor describe el problema.', 'warning');
+            return;
+        }
 
         setLoading(true);
         const supabase = createClient();
@@ -147,7 +175,10 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                     const path = `${user.id}/${bookingId}/${Date.now()}_${f.name}`;
                     const { getDisputeEvidenceSignedUpload } = await import('@/app/admin/disputes/actions');
                     const { token, error: signErr } = await getDisputeEvidenceSignedUpload(path);
-                    if (signErr || !token) { alert(signErr || 'No se pudo firmar la subida'); continue; }
+                    if (signErr || !token) {
+                        showToast(signErr || 'No se pudo firmar la subida', 'error');
+                        continue;
+                    }
                     const { error: upErr } = await bucket.uploadToSignedUrl(path, token, f);
                     if (!upErr) attachments.push(path);
                 }
@@ -164,8 +195,11 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
         setLoading(false);
         setDisputeModalOpen(false);
 
-        if (res.error) alert(res.error);
-        else alert('Disputa enviada. Un administrador revisará tu caso.');
+        if (res.error) {
+            showToast(res.error, 'error');
+        } else {
+            showToast('Disputa enviada. Un administrador revisará tu caso.', 'success');
+        }
     };
 
     if (status === 'completed' || status === 'cancelled') {
@@ -266,6 +300,80 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                         </div>
                     </div>
                 )}
+
+                {/* Toast Notifications */}
+                {toasts.length > 0 && (
+                    <div style={{
+                        position: 'fixed',
+                        bottom: 24,
+                        right: 24,
+                        zIndex: 9999,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.5rem',
+                        maxWidth: '400px'
+                    }}>
+                        {toasts.map(toast => (
+                            <div
+                                key={toast.id}
+                                style={{
+                                    background: 'rgb(var(--surface))',
+                                    border: '1px solid rgb(var(--border))',
+                                    borderLeft: `4px solid ${
+                                        toast.type === 'success' ? 'rgb(var(--success))' :
+                                        toast.type === 'error' ? 'rgb(var(--error))' :
+                                        toast.type === 'warning' ? 'rgb(var(--warning))' :
+                                        'rgb(var(--primary))'
+                                    }`,
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                    borderRadius: '8px',
+                                    padding: '0.875rem 1rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.75rem',
+                                    animation: 'slideIn 0.3s ease-out'
+                                }}
+                            >
+                                {toast.type === 'success' ? (
+                                    <CheckCircle size={20} style={{ color: 'rgb(var(--success))', flexShrink: 0 }} />
+                                ) : toast.type === 'error' ? (
+                                    <XCircle size={20} style={{ color: 'rgb(var(--error))', flexShrink: 0 }} />
+                                ) : (
+                                    <AlertCircle size={20} style={{ color: toast.type === 'warning' ? 'rgb(var(--warning))' : 'rgb(var(--primary))', flexShrink: 0 }} />
+                                )}
+                                <span style={{ flex: 1, fontSize: '0.9rem', color: 'rgb(var(--text-main))' }}>
+                                    {toast.message}
+                                </span>
+                                <button
+                                    onClick={() => removeToast(toast.id)}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        padding: '0.25rem',
+                                        color: 'rgb(var(--text-secondary))',
+                                        display: 'flex',
+                                        alignItems: 'center'
+                                    }}
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                <style>{`
+                    @keyframes slideIn {
+                        from {
+                            transform: translateX(100%);
+                            opacity: 0;
+                        }
+                        to {
+                            transform: translateX(0);
+                            opacity: 1;
+                        }
+                    }
+                `}</style>
             </div>
         );
     }
@@ -389,6 +497,80 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                     </div>
                 </div>
             )}
+
+            {/* Toast Notifications */}
+            {toasts.length > 0 && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 24,
+                    right: 24,
+                    zIndex: 9999,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                    maxWidth: '400px'
+                }}>
+                    {toasts.map(toast => (
+                        <div
+                            key={toast.id}
+                            style={{
+                                background: 'rgb(var(--surface))',
+                                border: '1px solid rgb(var(--border))',
+                                borderLeft: `4px solid ${
+                                    toast.type === 'success' ? 'rgb(var(--success))' :
+                                    toast.type === 'error' ? 'rgb(var(--error))' :
+                                    toast.type === 'warning' ? 'rgb(var(--warning))' :
+                                    'rgb(var(--primary))'
+                                }`,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                borderRadius: '8px',
+                                padding: '0.875rem 1rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.75rem',
+                                animation: 'slideIn 0.3s ease-out'
+                            }}
+                        >
+                            {toast.type === 'success' ? (
+                                <CheckCircle size={20} style={{ color: 'rgb(var(--success))', flexShrink: 0 }} />
+                            ) : toast.type === 'error' ? (
+                                <XCircle size={20} style={{ color: 'rgb(var(--error))', flexShrink: 0 }} />
+                            ) : (
+                                <AlertCircle size={20} style={{ color: toast.type === 'warning' ? 'rgb(var(--warning))' : 'rgb(var(--primary))', flexShrink: 0 }} />
+                            )}
+                            <span style={{ flex: 1, fontSize: '0.9rem', color: 'rgb(var(--text-main))' }}>
+                                {toast.message}
+                            </span>
+                            <button
+                                onClick={() => removeToast(toast.id)}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '0.25rem',
+                                    color: 'rgb(var(--text-secondary))',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                }}
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+            <style>{`
+                @keyframes slideIn {
+                    from {
+                        transform: translateX(100%);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
+                }
+            `}</style>
         </div>
     );
 }

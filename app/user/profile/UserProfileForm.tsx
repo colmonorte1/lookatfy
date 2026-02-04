@@ -1,12 +1,40 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import { Input } from '@/components/ui/Input/Input';
-import { Save, User, MapPin, Upload } from 'lucide-react';
+import { Save, User, MapPin, Upload, Globe } from 'lucide-react';
 import Image from 'next/image';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/ui/Toast/Toast';
+
+// Common timezones for Latin America, Spain, and USA
+const TIMEZONES = [
+    { value: '', label: 'Detectar automáticamente' },
+    { value: 'America/Bogota', label: 'Colombia (Bogotá) UTC-5' },
+    { value: 'America/Mexico_City', label: 'México (Ciudad de México) UTC-6' },
+    { value: 'America/Lima', label: 'Perú (Lima) UTC-5' },
+    { value: 'America/Santiago', label: 'Chile (Santiago) UTC-3' },
+    { value: 'America/Buenos_Aires', label: 'Argentina (Buenos Aires) UTC-3' },
+    { value: 'America/Caracas', label: 'Venezuela (Caracas) UTC-4' },
+    { value: 'America/Guayaquil', label: 'Ecuador (Guayaquil) UTC-5' },
+    { value: 'America/Panama', label: 'Panamá UTC-5' },
+    { value: 'America/Costa_Rica', label: 'Costa Rica UTC-6' },
+    { value: 'America/Guatemala', label: 'Guatemala UTC-6' },
+    { value: 'America/El_Salvador', label: 'El Salvador UTC-6' },
+    { value: 'America/Tegucigalpa', label: 'Honduras UTC-6' },
+    { value: 'America/Managua', label: 'Nicaragua UTC-6' },
+    { value: 'America/Santo_Domingo', label: 'Rep. Dominicana UTC-4' },
+    { value: 'America/Havana', label: 'Cuba (La Habana) UTC-5' },
+    { value: 'America/Puerto_Rico', label: 'Puerto Rico UTC-4' },
+    { value: 'Europe/Madrid', label: 'España (Madrid) UTC+1' },
+    { value: 'America/New_York', label: 'USA - Este (New York) UTC-5' },
+    { value: 'America/Chicago', label: 'USA - Central (Chicago) UTC-6' },
+    { value: 'America/Denver', label: 'USA - Montaña (Denver) UTC-7' },
+    { value: 'America/Los_Angeles', label: 'USA - Pacífico (Los Angeles) UTC-8' },
+    { value: 'UTC', label: 'UTC (Coordinado Universal)' },
+];
 
 interface UserProfile {
     id: string;
@@ -26,6 +54,7 @@ interface UserProfileFormProps {
 
 export default function UserProfileForm({ user }: UserProfileFormProps) {
     const router = useRouter();
+    const toast = useToast();
     const [isLoading, setIsLoading] = useState(false);
     const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
     const [uploading, setUploading] = useState(false);
@@ -33,6 +62,7 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [changingPwd, setChangingPwd] = useState(false);
+    const [detectedTimezone, setDetectedTimezone] = useState<string>('');
 
     const [formData, setFormData] = useState({
         first_name: user?.first_name || '',
@@ -40,13 +70,30 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
         phone: user?.phone || '',
         city: user?.city || '',
         country: user?.country || '',
-        email: user?.email || '', // Read only
+        email: user?.email || '',
         timezone: user?.timezone || '',
     });
+
+    // Detect user's timezone on mount
+    useEffect(() => {
+        try {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            setDetectedTimezone(tz);
+        } catch {
+            setDetectedTimezone('UTC');
+        }
+    }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleDetectTimezone = () => {
+        if (detectedTimezone) {
+            setFormData(prev => ({ ...prev, timezone: detectedTimezone }));
+            toast.info(`Zona horaria detectada: ${detectedTimezone}`);
+        }
     };
 
     const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,12 +129,13 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
 
             if (updateError) throw updateError;
 
+            toast.success('Foto de perfil actualizada');
             router.refresh();
 
         } catch (error: unknown) {
             console.error('Error uploading avatar:', error);
             const msg = (error as { message?: string }).message || 'Error subiendo imagen';
-            alert(`Error: ${msg}`);
+            toast.error(msg);
         } finally {
             setUploading(false);
         }
@@ -116,13 +164,13 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
 
             if (error) throw error;
 
-            alert('Perfil actualizado correctamente');
+            toast.success('Perfil actualizado correctamente');
             router.refresh();
 
         } catch (error: unknown) {
             console.error('Error updating profile:', error);
             const msg = (error as { message?: string }).message || 'No se pudo actualizar el perfil';
-            alert(`Error al actualizar el perfil: ${msg}`);
+            toast.error(msg);
         } finally {
             setIsLoading(false);
         }
@@ -131,19 +179,19 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user?.email) {
-            alert('No se encontró tu email para validar la contraseña.');
+            toast.error('No se encontró tu email para validar la contraseña.');
             return;
         }
         if (newPassword.length < 8) {
-            alert('La nueva contraseña debe tener al menos 8 caracteres.');
+            toast.error('La nueva contraseña debe tener al menos 8 caracteres.');
             return;
         }
         if (!/[0-9]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
-            alert('La nueva contraseña debe incluir al menos un número y un símbolo.');
+            toast.error('La nueva contraseña debe incluir al menos un número y un símbolo.');
             return;
         }
         if (newPassword !== confirmPassword) {
-            alert('La confirmación no coincide con la nueva contraseña.');
+            toast.error('La confirmación no coincide con la nueva contraseña.');
             return;
         }
         try {
@@ -151,21 +199,21 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
             const supabase = createClient();
             const { error: signErr } = await supabase.auth.signInWithPassword({ email: String(user.email), password: currentPassword });
             if (signErr) {
-                alert('La contraseña anterior es incorrecta.');
+                toast.error('La contraseña anterior es incorrecta.');
                 return;
             }
             const { error: updErr } = await supabase.auth.updateUser({ password: newPassword });
             if (updErr) {
-                alert(`No se pudo actualizar la contraseña: ${updErr.message}`);
+                toast.error(`No se pudo actualizar la contraseña: ${updErr.message}`);
                 return;
             }
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
-            alert('Contraseña actualizada correctamente.');
+            toast.success('Contraseña actualizada correctamente');
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            alert(`Error: ${msg}`);
+            toast.error(msg);
         } finally {
             setChangingPwd(false);
         }
@@ -280,7 +328,7 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
                                 name="country"
                                 value={formData.country}
                                 onChange={handleChange}
-                                placeholder="Ej. España"
+                                placeholder="Ej. Colombia"
                             />
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
@@ -290,30 +338,54 @@ export default function UserProfileForm({ user }: UserProfileFormProps) {
                                 icon={<MapPin size={16} />}
                                 value={formData.city}
                                 onChange={handleChange}
-                                placeholder="Ej. Madrid"
+                                placeholder="Ej. Bogotá"
                             />
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                            <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Tu Zona Horaria</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                        <label style={{ fontSize: '0.875rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Globe size={16} /> Tu Zona Horaria
+                        </label>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                             <select
                                 value={formData.timezone}
                                 onChange={(e) => setFormData(prev => ({ ...prev, timezone: e.target.value }))}
-                                style={{ padding: '0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--background))' }}
+                                style={{
+                                    flex: 1,
+                                    padding: '0.625rem 0.75rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: '1px solid rgb(var(--border))',
+                                    background: 'rgb(var(--background))',
+                                    fontSize: '0.9rem'
+                                }}
                                 aria-label="Zona horaria del usuario"
                             >
-                                <option value="" disabled>Selecciona tu zona</option>
-                                <option value="America/Bogota">Colombia (America/Bogota)</option>
-                                <option value="America/New_York">USA - Este (America/New_York)</option>
-                                <option value="America/Los_Angeles">USA - Pacífico (America/Los_Angeles)</option>
-                                <option value="UTC">UTC</option>
+                                {TIMEZONES.map(tz => (
+                                    <option key={tz.value} value={tz.value}>
+                                        {tz.label}
+                                    </option>
+                                ))}
                             </select>
-                            <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>
-                                Si no eliges, detectaremos automáticamente tu zona.
-                            </span>
+                            <button
+                                type="button"
+                                onClick={handleDetectTimezone}
+                                style={{
+                                    padding: '0.625rem 1rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: '1px solid rgb(var(--border))',
+                                    background: 'rgb(var(--surface-hover))',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                Detectar
+                            </button>
                         </div>
+                        <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>
+                            {detectedTimezone && `Tu navegador detectó: ${detectedTimezone}`}
+                        </span>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>

@@ -4,22 +4,13 @@ import { createServerClient } from '@supabase/ssr';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * Cron job para limpiar bookings pendientes expirados
- *
- * Configurar en Vercel:
- * vercel.json:
- * {
- *   "crons": [{
- *     "path": "/api/cron/cleanup-bookings",
- *     "schedule": "*/15 * * * *"
- *   }]
- * }
- *
- * O llamar manualmente:
- * curl -X POST http://localhost:3000/api/cron/cleanup-bookings \
- *   -H "Authorization: Bearer YOUR_CRON_SECRET"
- */
+// Cron job para limpiar bookings pendientes expirados
+//
+// Configurar en Vercel (vercel.json):
+// { "crons": [{ "path": "/api/cron/cleanup-bookings", "schedule": "every 15 minutes" }] }
+//
+// O llamar manualmente:
+// curl -X POST http://localhost:3000/api/cron/cleanup-bookings -H "Authorization: Bearer YOUR_CRON_SECRET"
 export async function POST(request: Request) {
   try {
     // Verificar autorización (en producción)

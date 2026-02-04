@@ -35,6 +35,37 @@ interface ProfileFormProps {
     expert: Expert | null;
 }
 
+const TIMEZONES = [
+    { value: '', label: 'Selecciona tu zona horaria' },
+    // Latin America
+    { value: 'America/Bogota', label: 'Colombia (Bogotá) UTC-5' },
+    { value: 'America/Mexico_City', label: 'México (Ciudad de México) UTC-6' },
+    { value: 'America/Lima', label: 'Perú (Lima) UTC-5' },
+    { value: 'America/Buenos_Aires', label: 'Argentina (Buenos Aires) UTC-3' },
+    { value: 'America/Santiago', label: 'Chile (Santiago) UTC-4/-3' },
+    { value: 'America/Caracas', label: 'Venezuela (Caracas) UTC-4' },
+    { value: 'America/Guayaquil', label: 'Ecuador (Guayaquil) UTC-5' },
+    { value: 'America/La_Paz', label: 'Bolivia (La Paz) UTC-4' },
+    { value: 'America/Asuncion', label: 'Paraguay (Asunción) UTC-4/-3' },
+    { value: 'America/Montevideo', label: 'Uruguay (Montevideo) UTC-3' },
+    { value: 'America/Panama', label: 'Panamá UTC-5' },
+    { value: 'America/Costa_Rica', label: 'Costa Rica UTC-6' },
+    { value: 'America/Guatemala', label: 'Guatemala UTC-6' },
+    { value: 'America/Havana', label: 'Cuba (La Habana) UTC-5/-4' },
+    { value: 'America/Santo_Domingo', label: 'Rep. Dominicana UTC-4' },
+    { value: 'America/Puerto_Rico', label: 'Puerto Rico UTC-4' },
+    // Spain
+    { value: 'Europe/Madrid', label: 'España (Madrid) UTC+1/+2' },
+    { value: 'Atlantic/Canary', label: 'España (Canarias) UTC+0/+1' },
+    // USA
+    { value: 'America/New_York', label: 'USA - Este (New York) UTC-5/-4' },
+    { value: 'America/Chicago', label: 'USA - Central (Chicago) UTC-6/-5' },
+    { value: 'America/Denver', label: 'USA - Montaña (Denver) UTC-7/-6' },
+    { value: 'America/Los_Angeles', label: 'USA - Pacífico (Los Angeles) UTC-8/-7' },
+    // UTC
+    { value: 'UTC', label: 'UTC (Hora Universal)' },
+];
+
 export default function ProfileForm({ user, expert }: ProfileFormProps) {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
@@ -83,6 +114,21 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
     const [skills, setSkills] = useState<BudgetItem[]>(Array.isArray(expert?.skills) ? expert!.skills! : []);
     const [newLanguage, setNewLanguage] = useState<BudgetItem>({ name: '', level: 'B1' });
     const [newSkill, setNewSkill] = useState<BudgetItem>({ name: '', level: 'Intermediate' });
+
+    // Detected timezone from browser
+    const [detectedTimezone, setDetectedTimezone] = useState<string | null>(null);
+
+    // Detect browser timezone on mount
+    useEffect(() => {
+        try {
+            const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (browserTz) {
+                setDetectedTimezone(browserTz);
+            }
+        } catch {
+            // Ignore detection errors
+        }
+    }, []);
 
     // Toast notification function
     const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'error') => {
@@ -806,25 +852,45 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
                             <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>Zona Horaria <span style={{ color: 'rgb(var(--error))' }}>*</span></label>
-                            <select
-                                value={formData.timezone}
-                                onChange={(e) => {
-                                    setFormData(prev => ({ ...prev, timezone: e.target.value }));
-                                    setHasUnsavedChanges(true);
-                                }}
-                                required
-                                style={{ padding: '0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--background))' }}
-                                aria-label="Zona horaria"
-                            >
-                                <option value="" disabled>Selecciona tu zona</option>
-                                <option value="America/Bogota">Colombia (America/Bogota)</option>
-                                <option value="America/New_York">USA - Este (America/New_York)</option>
-                                <option value="America/Los_Angeles">USA - Pacífico (America/Los_Angeles)</option>
-                                <option value="UTC">UTC</option>
-                            </select>
-                            <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>
-                                Usamos zonas IANA. Ampliaremos la lista más adelante.
-                            </span>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <select
+                                    value={formData.timezone}
+                                    onChange={(e) => {
+                                        setFormData(prev => ({ ...prev, timezone: e.target.value }));
+                                        setHasUnsavedChanges(true);
+                                    }}
+                                    required
+                                    style={{ padding: '0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--background))', flex: 1 }}
+                                    aria-label="Zona horaria"
+                                >
+                                    {TIMEZONES.map(tz => (
+                                        <option key={tz.value} value={tz.value} disabled={tz.value === ''}>
+                                            {tz.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                        if (detectedTimezone) {
+                                            setFormData(prev => ({ ...prev, timezone: detectedTimezone }));
+                                            setHasUnsavedChanges(true);
+                                            showToast(`Zona horaria detectada: ${detectedTimezone}`, 'success');
+                                        } else {
+                                            showToast('No se pudo detectar la zona horaria del navegador', 'warning');
+                                        }
+                                    }}
+                                    style={{ whiteSpace: 'nowrap' }}
+                                >
+                                    Detectar
+                                </Button>
+                            </div>
+                            {detectedTimezone && (
+                                <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>
+                                    Zona detectada del navegador: <strong>{detectedTimezone}</strong>
+                                </span>
+                            )}
                         </div>
                     </div>
 

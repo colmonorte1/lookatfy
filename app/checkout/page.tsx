@@ -1,12 +1,20 @@
 "use client";
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { CreditCard, Calendar, Clock, Lock, ShieldCheck, ChevronLeft } from 'lucide-react';
+import { CreditCard, Calendar, Clock, ShieldCheck, ChevronLeft, CheckCircle, XCircle, AlertCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import { buildLocalDate } from '@/utils/timezone';
+
+type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+interface ToastMessage {
+    id: string;
+    message: string;
+    type: ToastType;
+}
 
 // Helper to wrap useSearchParams in Suspense
 function CheckoutContent() {
@@ -14,6 +22,21 @@ function CheckoutContent() {
     const router = useRouter();
     const [isProcessing, setIsProcessing] = useState(false);
     const [userTimezonePref, setUserTimezonePref] = useState<string | null>(null);
+
+    // Toast notification state
+    const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+    const showToast = useCallback((message: string, type: ToastType = 'info') => {
+        const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        setToasts(prev => [...prev, { id, message, type }]);
+        setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, 5000);
+    }, []);
+
+    const removeToast = useCallback((id: string) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+    }, []);
 
     // User Form State
     const [formData, setFormData] = useState({
@@ -128,7 +151,7 @@ function CheckoutContent() {
         e.preventDefault();
 
         if (!serviceId || !expertId || !date || !time) {
-            alert("Faltan datos de la reserva.");
+            showToast("Faltan datos de la reserva.", 'error');
             return;
         }
 
@@ -140,7 +163,7 @@ function CheckoutContent() {
             // 1. Get Current User (Again for safety)
             const { data: { user }, error: authError } = await supabase.auth.getUser();
             if (authError || !user) {
-                alert("Debes iniciar sesión para reservar.");
+                showToast("Debes iniciar sesión para reservar.", 'warning');
                 router.push('/login?next=/checkout');
                 return;
             }
@@ -221,17 +244,14 @@ function CheckoutContent() {
 
                     totalInCOP = Math.round(total * rate);
 
-                    // Informar al usuario de la conversión
+                    // Informar al usuario de la conversión con toast
                     const conversionMessage = rateData.source === 'live'
-                        ? `El monto será convertido de ${formatAmount(currency, total)} a ${formatAmount('COP', totalInCOP)} (tasa actual).`
-                        : `El monto será convertido de ${formatAmount(currency, total)} a ${formatAmount('COP', totalInCOP)} (tasa de referencia).`;
+                        ? `Monto convertido: ${formatAmount(currency, total)} → ${formatAmount('COP', totalInCOP)}`
+                        : `Monto convertido (ref.): ${formatAmount(currency, total)} → ${formatAmount('COP', totalInCOP)}`;
 
-                    if (!confirm(`${conversionMessage} ¿Deseas continuar?`)) {
-                        setIsProcessing(false);
-                        return;
-                    }
+                    showToast(conversionMessage, 'info');
                 } catch (err) {
-                    alert(`Error obteniendo tasa de cambio para ${currency}. Por favor intenta nuevamente.`);
+                    showToast(`Error obteniendo tasa de cambio para ${currency}. Por favor intenta nuevamente.`, 'error');
                     setIsProcessing(false);
                     return;
                 }
@@ -251,21 +271,21 @@ function CheckoutContent() {
             })();
             if (paymentMethod === 'PSE') {
                 if (!pseInfo.user_legal_id || !formData.email || !pseInfo.financial_institution_code || !(pseInfo.payment_description || serviceTitle)) {
-                    alert('Para PSE debes ingresar documento, email, banco y descripción.');
+                    showToast('Para PSE debes ingresar documento, email, banco y descripción.', 'warning');
                     setIsProcessing(false);
                     return;
                 }
             }
             if (paymentMethod === 'NEQUI') {
                 if (!(nequiPhone || formData.phone)) {
-                    alert('Para Nequi debes ingresar un teléfono válido.');
+                    showToast('Para Nequi debes ingresar un teléfono válido.', 'warning');
                     setIsProcessing(false);
                     return;
                 }
             }
             if (paymentMethod === 'DAVIPLATA') {
                 if (!daviplataDoc.number || !formData.phone) {
-                    alert('Para Daviplata debes ingresar documento y teléfono.');
+                    showToast('Para Daviplata debes ingresar documento y teléfono.', 'warning');
                     setIsProcessing(false);
                     return;
                 }
@@ -324,14 +344,13 @@ function CheckoutContent() {
                 title: serviceTitle,
                 expert: expertLabel,
                 date: date,
-                time: time,
-                roomUrl: roomUrl || ''
+                time: time
             });
             router.push(`/checkout/success?${successParams.toString()}`);
 
         } catch (error) {
             console.error(error);
-            alert('Hubo un error al procesar la reserva. Por favor intenta de nuevo.');
+            showToast('Hubo un error al procesar la reserva. Por favor intenta de nuevo.', 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -345,7 +364,15 @@ function CheckoutContent() {
 
             <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>Finalizar Reserva</h1>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: '4rem' }}>
+            <div className="checkout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem' }}>
+                <style>{`
+                    @media (min-width: 900px) {
+                        .checkout-grid {
+                            grid-template-columns: 1fr 400px !important;
+                            gap: 4rem !important;
+                        }
+                    }
+                `}</style>
 
                 {/* Left Column: Customer Information */}
                 <div>
@@ -596,6 +623,80 @@ function CheckoutContent() {
                 </div>
 
             </div>
+
+            {/* Toast Notifications */}
+            {toasts.length > 0 && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 24,
+                    right: 24,
+                    zIndex: 9999,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                    maxWidth: '400px'
+                }}>
+                    {toasts.map(toast => (
+                        <div
+                            key={toast.id}
+                            style={{
+                                background: 'rgb(var(--surface))',
+                                border: '1px solid rgb(var(--border))',
+                                borderLeft: `4px solid ${
+                                    toast.type === 'success' ? 'rgb(var(--success))' :
+                                    toast.type === 'error' ? 'rgb(var(--error))' :
+                                    toast.type === 'warning' ? 'rgb(var(--warning))' :
+                                    'rgb(var(--primary))'
+                                }`,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                borderRadius: '8px',
+                                padding: '0.875rem 1rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.75rem',
+                                animation: 'toastSlideIn 0.3s ease-out'
+                            }}
+                        >
+                            {toast.type === 'success' ? (
+                                <CheckCircle size={20} style={{ color: 'rgb(var(--success))', flexShrink: 0 }} />
+                            ) : toast.type === 'error' ? (
+                                <XCircle size={20} style={{ color: 'rgb(var(--error))', flexShrink: 0 }} />
+                            ) : (
+                                <AlertCircle size={20} style={{ color: toast.type === 'warning' ? 'rgb(var(--warning))' : 'rgb(var(--primary))', flexShrink: 0 }} />
+                            )}
+                            <span style={{ flex: 1, fontSize: '0.9rem', color: 'rgb(var(--text-main))' }}>
+                                {toast.message}
+                            </span>
+                            <button
+                                onClick={() => removeToast(toast.id)}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '0.25rem',
+                                    color: 'rgb(var(--text-secondary))',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                }}
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+            <style>{`
+                @keyframes toastSlideIn {
+                    from {
+                        transform: translateX(100%);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
+                }
+            `}</style>
         </div>
     );
 }

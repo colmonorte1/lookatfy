@@ -8,7 +8,7 @@
 .heroOverlay {
     position: absolute;
     inset: 0;
-    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
 }
 
 .heroContent {
@@ -50,7 +50,7 @@
     border: 1px solid rgb(var(--border));
     margin-bottom: 2rem;
     display: flex;
-    gap: 1.5rem;
+    flex-direction: column;
     align-items: flex-start;
 }
 
@@ -67,7 +67,7 @@
     border: 1px solid rgb(var(--border));
     position: sticky;
     top: 2rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 }
 
 @media (max-width: 1024px) {
@@ -84,10 +84,6 @@
 
     .heroTitle {
         font-size: 1.5rem;
-    }
-
-    .expertCard {
-        flex-direction: column;
     }
 
     .twoCol {

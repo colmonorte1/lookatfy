@@ -55,7 +55,7 @@ export default function LoginPage() {
                 // Fetch role from profiles table (Source of Truth)
                 const { data: profile, error: profileError } = await supabase
                     .from('profiles')
-                    .select('role, email, full_name')
+                    .select('role, email, full_name, status, deleted_at')
                     .eq('id', user.id)
                     .single();
 

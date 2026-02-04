@@ -21,6 +21,7 @@ interface Service {
     includes?: string[];
     not_includes?: string[];
     status?: string;
+    category?: string;
 }
 
 interface ServiceCardProps {

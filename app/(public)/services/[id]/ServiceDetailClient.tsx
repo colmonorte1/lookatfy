@@ -112,11 +112,14 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
     };
 
     const handleDateSelect = (dateStr: string, time: string) => {
-        const d = new Date(dateStr);
-        setSelectedDate(d.getDate());
+        // Parse date string directly to avoid timezone issues
+        // dateStr format: "YYYY-MM-DD"
+        const [, , dayPart] = dateStr.split('-');
+        const day = parseInt(dayPart, 10);
+        setSelectedDate(day);
         setSelectedDateStr(dateStr);
         setSelectedTime(time);
-        setIsCalendarOpen(false); // Close calendar after selection ? or keep open. Let's close it.
+        setIsCalendarOpen(false);
     };
 
     // Fallback/Default values if data is missing
@@ -159,44 +162,83 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                 <div>
                     {/* Expert Profile Card */}
                     <div className={styles.expertCard}>
-                        <img
-                            src={expertAvatar}
-                            alt={expertName}
-                            style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover' }}
-                        />
-                        <div>
-                            <h3 style={{ fontSize: '1.25rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                {expertName}
-                                {expert.verified && <ShieldCheck size={18} color="rgb(var(--success))" />}
-                            </h3>
-                            <div style={{ color: 'rgb(var(--primary))', fontWeight: 500, marginBottom: '0.5rem' }}>{expertTitle}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'rgb(var(--text-secondary))', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-                                <Star size={16} fill="rgb(var(--warning))" stroke="none" /> {expert.rating_avg ?? 5.0} ({expert.reviews_total ?? 0})
+                        {/* Avatar + Name in same row */}
+                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <img
+                                src={expertAvatar}
+                                alt={expertName}
+                                style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                            />
+                            <div>
+                                <h3 style={{ fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, marginBottom: '0.25rem' }}>
+                                    {expertName}
+                                    {expert.verified && <ShieldCheck size={16} color="rgb(var(--success))" />}
+                                </h3>
+                                <div style={{ color: 'rgb(var(--primary))', fontWeight: 500, fontSize: '0.9rem' }}>
+                                    {expertTitle}
+                                </div>
                             </div>
-                            <p style={{ fontSize: '0.95rem', color: 'rgb(var(--text-secondary))', lineHeight: '1.5' }}>
-                                "{expert.bio || 'Experto verificado en Lookatfy.'}"
-                            </p>
-                            {Array.isArray(expert.languages) && expert.languages.length > 0 && (
-                                <div style={{ marginTop: '0.75rem' }}>
-                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.25rem' }}>Idiomas</div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }} aria-label="Idiomas">
-                                        {expert.languages.map((l, idx) => (
-                                            <span key={`${l.name}-${idx}`} style={{ background: 'rgb(var(--surface-hover))', color: 'rgb(var(--text-secondary))', padding: '2px 8px', borderRadius: 6, fontSize: '0.75rem' }}>{l.name} · {l.level}</span>
-                                        ))}
+                        </div>
+
+                        {/* Rating & Timezone */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', color: 'rgb(var(--text-secondary))', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <Star size={16} fill="rgb(var(--warning))" stroke="none" />
+                                <span style={{ fontWeight: 600, color: 'rgb(var(--text-main))' }}>{expert.rating_avg ?? 5.0}</span>
+                                <span>({expert.reviews_total ?? 0} reseñas)</span>
+                            </div>
+                            {expert.timezone && (
+                                <>
+                                    <span style={{ color: 'rgb(var(--border))' }}>|</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                        <Clock size={16} />
+                                        <span>{expert.timezone}</span>
                                     </div>
-                                </div>
-                            )}
-                            {Array.isArray(expert.skills) && expert.skills.length > 0 && (
-                                <div style={{ marginTop: '0.5rem' }}>
-                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.25rem' }}>Skills</div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }} aria-label="Skills">
-                                        {expert.skills.map((s, idx) => (
-                                            <span key={`${s.name}-${idx}`} style={{ background: 'rgb(var(--surface-hover))', color: 'rgb(var(--text-secondary))', padding: '2px 8px', borderRadius: 6, fontSize: '0.75rem' }}>{s.name} · {s.level}</span>
-                                        ))}
-                                    </div>
-                                </div>
+                                </>
                             )}
                         </div>
+
+                        {/* Bio */}
+                        {expert.bio && (
+                            <p style={{ fontSize: '0.9rem', color: 'rgb(var(--text-secondary))', lineHeight: '1.6', marginBottom: '1rem', fontStyle: 'italic', borderLeft: '3px solid rgb(var(--primary))', paddingLeft: '1rem' }}>
+                                "{expert.bio.length > 200 ? expert.bio.slice(0, 200) + '...' : expert.bio}"
+                            </p>
+                        )}
+
+                        {/* Divider */}
+                        <div style={{ width: '100%', height: '1px', background: 'rgb(var(--border))', marginBottom: '1rem' }} />
+
+                        {/* Languages */}
+                        {Array.isArray(expert.languages) && expert.languages.length > 0 && (
+                            <div style={{ marginBottom: '1rem' }}>
+                                <div style={{ fontSize: '0.9rem', color: 'rgb(var(--text-secondary))', marginBottom: '0.5rem' }}>
+                                    <span style={{ fontWeight: 600, color: 'rgb(var(--text-main))' }}>Idiomas:</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }} aria-label="Idiomas">
+                                    {expert.languages.map((l, idx) => (
+                                        <span key={`${l.name}-${idx}`} style={{ padding: '0.35rem 0.75rem', background: 'rgb(var(--surface-hover))', borderRadius: '6px', fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>
+                                            {l.name} ({l.level})
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Profile Link */}
+                        <Link
+                            href={`/experts/${service.expert_id}`}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                color: 'rgb(var(--primary))',
+                                fontWeight: 500,
+                                textDecoration: 'none',
+                                fontSize: '0.9rem'
+                            }}
+                        >
+                            Ver perfil completo <ChevronRight size={16} />
+                        </Link>
                     </div>
 
                     <div style={{ marginBottom: '2rem' }}>
