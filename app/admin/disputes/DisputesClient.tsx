@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { getDisputes, resolveDispute } from './actions';
+import { useEffect, useState } from 'react';
+import { resolveDispute } from './actions';
 import { createClient } from '@/utils/supabase/client';
 import { Button } from '@/components/ui/Button/Button';
-import { AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, XCircle, Download } from 'lucide-react';
 import Image from 'next/image';
 
 type Person = { full_name?: string; email?: string };
@@ -36,60 +36,65 @@ type Dispute = {
 
 export default function DisputesClient({ initialDisputes }: { initialDisputes: Dispute[] }) {
     const [disputes, setDisputes] = useState<Dispute[]>(initialDisputes || []);
-    const [loading, setLoading] = useState(false);
     const [resolving, setResolving] = useState<string | null>(null);
     const [resolutionNotes, setResolutionNotes] = useState('');
-    const [errorMsg, setErrorMsg] = useState<string | null>(null);
-    const [tab, setTab] = useState<'all' | Dispute['status']>('all');
-    const [query, setQuery] = useState('');
 
-    const lang: 'es' | 'en' = 'es';
-    const dict = {
-        es: {
-            title: 'Disputas y Reclamos',
-            loading: 'Cargando disputas...',
-            error: 'Error al cargar disputas',
-            retry: 'Reintentar',
-            empty: 'No hay disputas pendientes.',
-            search: 'Buscar...',
-            tabs: { all: 'Todas', open: 'Abiertas', under_review: 'En revisión', resolved_refunded: 'Reembolsadas', resolved_dismissed: 'Desestimadas' },
-            resolveTitle: 'Resolver Disputa',
-            textareaPlaceholder: 'Notas de resolución (mensaje para el usuario)...',
-            refund: 'Aprobar Reembolso (Cliente)',
-            dismiss: 'Desestimar (Experto)',
-            reportedBy: 'Reportado por',
-            against: 'Contra',
-            description: 'Descripción',
-            resolvedLabel: 'Resuelto',
-        },
-        en: {
-            title: 'Disputes',
-            loading: 'Loading disputes...',
-            error: 'Failed to load disputes',
-            retry: 'Retry',
-            empty: 'No disputes found.',
-            search: 'Search...',
-            tabs: { all: 'All', open: 'Open', under_review: 'Under Review', resolved_refunded: 'Refunded', resolved_dismissed: 'Dismissed' },
-            resolveTitle: 'Resolve Dispute',
-            textareaPlaceholder: 'Resolution notes (message for the user)...',
-            refund: 'Approve Refund (Client)',
-            dismiss: 'Dismiss (Expert)',
-            reportedBy: 'Reported by',
-            against: 'Against',
-            description: 'Description',
-            resolvedLabel: 'Resolved',
+    // Update disputes when initialDisputes changes (from server-side filtering)
+    useEffect(() => {
+        setDisputes(initialDisputes || []);
+    }, [initialDisputes]);
+
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'open':
+                return { label: 'Abierta', bg: 'rgba(var(--warning), 0.1)', color: 'rgb(var(--warning))' };
+            case 'under_review':
+                return { label: 'En revisión', bg: 'rgba(var(--info), 0.1)', color: 'rgb(var(--info))' };
+            case 'resolved_refunded':
+                return { label: 'Reembolsada', bg: 'rgba(var(--success), 0.1)', color: 'rgb(var(--success))' };
+            case 'resolved_dismissed':
+                return { label: 'Desestimada', bg: 'rgba(var(--error), 0.1)', color: 'rgb(var(--error))' };
+            default:
+                return { label: status, bg: 'rgb(var(--surface-hover))', color: 'rgb(var(--text-secondary))' };
         }
-    } as const;
+    };
 
-    const filtered = useMemo(() => {
-        const base = tab === 'all' ? disputes : disputes.filter(d => d.status === tab);
-        if (!query.trim()) return base;
-        const q = query.toLowerCase();
-        return base.filter(d =>
-            (d.reason || '').toLowerCase().includes(q) ||
-            (d.description || '').toLowerCase().includes(q)
-        );
-    }, [disputes, tab, query]);
+    const getRoleBadge = (role?: string) => {
+        switch (role) {
+            case 'client':
+                return { label: 'Cliente', bg: 'rgba(var(--primary), 0.1)', color: 'rgb(var(--primary))' };
+            case 'expert':
+                return { label: 'Experto', bg: 'rgba(var(--info), 0.1)', color: 'rgb(var(--info))' };
+            default:
+                return { label: role || 'N/A', bg: 'rgb(var(--surface-hover))', color: 'rgb(var(--text-secondary))' };
+        }
+    };
+
+    const exportCSV = () => {
+        const headers = ['dispute_id', 'status', 'reason', 'description', 'reporter_name', 'reporter_role', 'user_name', 'expert_name', 'service', 'created_at', 'resolved_at', 'resolution_notes'];
+        const rows = disputes.map(d => [
+            d.id,
+            d.status,
+            d.reason || '',
+            (d.description || '').replace(/[\n\r,]/g, ' '),
+            d.reporter?.full_name || '',
+            d.reporter?.role || '',
+            d.booking?.user?.full_name || '',
+            d.booking?.expert?.full_name || '',
+            d.booking?.service?.title || '',
+            d.created_at,
+            d.resolved_at || '',
+            (d.resolution_notes || '').replace(/[\n\r,]/g, ' ')
+        ]);
+        const csv = [headers.join(','), ...rows.map(r => r.map(val => typeof val === 'string' && (val.includes(',') || val.includes('"')) ? `"${val.replace(/"/g, '""')}"` : String(val)).join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `disputes_${Date.now()}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
 
     const viewAttachment = async (path: string) => {
         try {
@@ -101,7 +106,7 @@ export default function DisputesClient({ initialDisputes }: { initialDisputes: D
                 return;
             }
             window.open(data.signedUrl, '_blank');
-        } catch {}
+        } catch { }
     };
 
     const [signedMap, setSignedMap] = useState<Record<string, string>>({});
@@ -109,6 +114,7 @@ export default function DisputesClient({ initialDisputes }: { initialDisputes: D
         const low = p.toLowerCase();
         return low.endsWith('.png') || low.endsWith('.jpg') || low.endsWith('.jpeg') || low.endsWith('.gif') || low.endsWith('.webp');
     };
+
     useEffect(() => {
         const run = async () => {
             const supabase = createClient();
@@ -129,20 +135,6 @@ export default function DisputesClient({ initialDisputes }: { initialDisputes: D
         if (disputes.length) run();
     }, [disputes]);
 
-    const loadDisputes = async () => {
-        setLoading(true);
-        setErrorMsg(null);
-        try {
-            const data = await getDisputes();
-            setDisputes(data);
-        } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            setErrorMsg(msg);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const handleResolve = async (disputeId: string, status: 'resolved_refunded' | 'resolved_dismissed') => {
         if (!confirm('¿Estás seguro de esta resolución?')) return;
 
@@ -154,7 +146,12 @@ export default function DisputesClient({ initialDisputes }: { initialDisputes: D
 
         if (res.success) {
             alert('Disputa actualizada correctamente.');
-            loadDisputes();
+            // Update local state
+            setDisputes(prev => prev.map(d =>
+                d.id === disputeId
+                    ? { ...d, status, resolution_notes: resolutionNotes, resolved_at: new Date().toISOString() }
+                    : d
+            ));
             setResolving(null);
             setResolutionNotes('');
         } else {
@@ -163,186 +160,231 @@ export default function DisputesClient({ initialDisputes }: { initialDisputes: D
     };
 
     return (
-        <div style={{ padding: '2rem' }}>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <AlertCircle /> {dict[lang].title}
-            </h1>
-
-            <div role="tablist" aria-label="Filtrar por estado" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                {(['all','open','under_review','resolved_refunded','resolved_dismissed'] as ('all' | Dispute['status'])[]).map(k => (
-                    <button
-                        key={k}
-                        role="tab"
-                        aria-selected={tab === k}
-                        onClick={() => setTab(k)}
-                        style={{
-                            padding: '0.4rem 0.7rem',
-                            borderRadius: 8,
-                            border: '1px solid #d0d7de',
-                            background: tab === k ? '#eef2ff' : '#ffffff',
-                            color: '#0b1020',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                        }}
-                    >
-                        {dict[lang].tabs[k as keyof typeof dict['es']['tabs']]}
-                    </button>
-                ))}
+        <>
+            {/* Header with count and export */}
+            <div style={{
+                background: 'rgb(var(--surface))',
+                borderRadius: 'var(--radius-lg)',
+                border: '1px solid rgb(var(--border))',
+                padding: '1rem 1.5rem',
+                marginBottom: '1rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+            }}>
+                <span style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>
+                    {disputes.length} disputa{disputes.length !== 1 ? 's' : ''}
+                </span>
+                <Button variant="outline" size="sm" style={{ gap: '0.5rem' }} onClick={exportCSV}>
+                    <Download size={16} />
+                    Exportar CSV
+                </Button>
             </div>
 
-            <div style={{ marginBottom: '1rem' }}>
-                <input
-                    aria-label={dict[lang].search}
-                    placeholder={dict[lang].search}
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    style={{ width: '100%', maxWidth: 360, padding: '0.5rem 0.6rem', borderRadius: 8, border: '1px solid #d0d7de' }}
-                />
-            </div>
-
-            {loading ? (
-                <p>{dict[lang].loading}</p>
-            ) : errorMsg ? (
-                <div style={{ background: 'rgb(var(--surface))', border: '1px solid rgb(var(--error))', color: 'rgb(var(--error))', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
-                    <strong>{dict[lang].error}</strong>
-                    <div style={{ fontSize: '0.9rem', marginTop: '0.25rem' }}>{errorMsg}</div>
-                    <Button variant="outline" onClick={() => loadDisputes()} style={{ marginTop: '0.75rem' }}>{dict[lang].retry}</Button>
+            {disputes.length === 0 ? (
+                <div style={{
+                    background: 'rgb(var(--surface))',
+                    borderRadius: 'var(--radius-lg)',
+                    border: '1px solid rgb(var(--border))',
+                    padding: '3rem',
+                    textAlign: 'center',
+                    color: 'rgb(var(--text-secondary))'
+                }}>
+                    No se encontraron disputas con los filtros actuales.
                 </div>
-            ) : filtered.length === 0 ? (
-                <p>{dict[lang].empty}</p>
             ) : (
-                <div style={{ display: 'grid', gap: '1rem' }}>
-                    {filtered.map((dispute) => (
-                        <div key={dispute.id} style={{
-                            background: 'white', padding: '1.5rem', borderRadius: '8px',
-                            border: '1px solid #eee', boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                        }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                                <div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <span style={{
-                                            padding: '0.25rem 0.5rem', borderRadius: 6, fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase',
-                                            background: dispute.status === 'open' ? '#FFF6D6' : dispute.status === 'under_review' ? '#E6F4FF' : dispute.status.includes('refunded') ? '#EAF7E6' : '#FFE9E6',
-                                            color: dispute.status === 'open' ? '#5A4600' : dispute.status === 'under_review' ? '#083862' : dispute.status.includes('refunded') ? '#0F3D16' : '#7A0611',
-                                            border: '1px solid #d0d7de'
-                                        }}>
-                                            {dispute.status}
-                                        </span>
-                                        <span style={{ fontSize: '0.85rem', color: '#666' }}>
-                                            {new Date(dispute.created_at).toLocaleDateString()}
-                                        </span>
-                                    </div>
-                                    <h3 style={{ margin: '0.5rem 0 0.25rem', fontSize: '1.1rem' }}>{dispute.reason}</h3>
-                                    <p style={{ margin: 0, color: '#666' }}>Booking ID: {dispute.booking?.id?.slice(0, 8)}...</p>
-                                </div>
-                                <div style={{ textAlign: 'right', fontSize: '0.9rem' }}>
-                                    <div><strong>Reportado por:</strong> {dispute.reporter?.full_name} ({dispute.reporter?.role})</div>
-                                    <div><strong>Contra:</strong> {dispute.reporter?.role === 'client' ? dispute.booking?.expert?.full_name : dispute.booking?.user?.full_name}</div>
-                                </div>
-                            </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {disputes.map((dispute) => {
+                        const statusBadge = getStatusBadge(dispute.status);
+                        const roleBadge = getRoleBadge(dispute.reporter?.role);
 
-                            <div style={{ background: '#f9f9f9', padding: '1rem', borderRadius: '4px', marginBottom: '1rem' }}>
-                                <strong>Descripción:</strong>
-                                <p style={{ margin: '0.5rem 0 0' }}>{dispute.description}</p>
-                            </div>
-
-                            {dispute.expert_response && (
-                                <div style={{ borderTop: '1px solid #eee', paddingTop: '0.75rem', marginBottom: '1rem' }}>
-                                    <strong>Respuesta del experto:</strong>
-                                    <p style={{ margin: '0.5rem 0 0' }}>{dispute.expert_response}</p>
-                                </div>
-                            )}
-                            {dispute.user_response && (
-                                <div style={{ borderTop: '1px solid #eee', paddingTop: '0.75rem', marginBottom: '1rem' }}>
-                                    <strong>Respuesta del usuario:</strong>
-                                    <p style={{ margin: '0.5rem 0 0' }}>{dispute.user_response}</p>
-                                </div>
-                            )}
-
-                            {(dispute.user_attachments && dispute.user_attachments.length > 0) || (dispute.expert_attachments && dispute.expert_attachments.length > 0) ? (
-                                <div style={{ borderTop: '1px solid #eee', paddingTop: '1rem', marginBottom: '1rem' }}>
-                                    <h4 style={{ fontSize: '0.95rem', marginBottom: '0.5rem' }}>Adjuntos</h4>
-                                    {dispute.user_attachments && dispute.user_attachments.length > 0 && (
-                                        <div style={{ marginBottom: '0.5rem' }}>
-                                            <strong>Usuario:</strong>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
-                                                {dispute.user_attachments!.map((p, idx) => (
-                                                    isImagePath(p) && signedMap[p] ? (
-                                                        <div key={p + idx} style={{ width: 96, height: 96, position: 'relative', border: '1px solid #eee', borderRadius: 6, overflow: 'hidden' }}>
-                                                            <Image src={signedMap[p]} alt="Evidencia" fill sizes="96px" style={{ objectFit: 'cover' }} onClick={() => window.open(signedMap[p], '_blank')} />
-                                                        </div>
-                                                    ) : (
-                                                        <Button key={p + idx} size="sm" variant="outline" onClick={() => viewAttachment(p)}>Ver evidencia</Button>
-                                                    )
-                                                ))}
-                                            </div>
+                        return (
+                            <div key={dispute.id} style={{
+                                background: 'rgb(var(--surface))',
+                                padding: '1.5rem',
+                                borderRadius: 'var(--radius-lg)',
+                                border: '1px solid rgb(var(--border))'
+                            }}>
+                                {/* Header */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                                    <div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                            <span style={{
+                                                padding: '0.25rem 0.75rem',
+                                                borderRadius: '1rem',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 600,
+                                                background: statusBadge.bg,
+                                                color: statusBadge.color
+                                            }}>
+                                                {statusBadge.label}
+                                            </span>
+                                            <span style={{ fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>
+                                                {new Date(dispute.created_at).toLocaleDateString('es-CO', {
+                                                    day: '2-digit',
+                                                    month: 'short',
+                                                    year: 'numeric'
+                                                })}
+                                            </span>
                                         </div>
-                                    )}
-                                    {dispute.expert_attachments && dispute.expert_attachments.length > 0 && (
+                                        <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0 }}>{dispute.reason}</h3>
+                                        <p style={{ margin: '0.25rem 0 0', color: 'rgb(var(--text-secondary))', fontSize: '0.875rem' }}>
+                                            ID: {dispute.id.slice(0, 8)}... {dispute.booking?.service?.title && `• Servicio: ${dispute.booking.service.title}`}
+                                        </p>
+                                    </div>
+                                    <div style={{ textAlign: 'right', fontSize: '0.875rem' }}>
+                                        <div style={{ marginBottom: '0.25rem' }}>
+                                            <strong>Reportado por:</strong> {dispute.reporter?.full_name || 'N/A'}
+                                            <span style={{
+                                                marginLeft: '0.5rem',
+                                                padding: '0.15rem 0.5rem',
+                                                borderRadius: '0.75rem',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 600,
+                                                background: roleBadge.bg,
+                                                color: roleBadge.color
+                                            }}>
+                                                {roleBadge.label}
+                                            </span>
+                                        </div>
                                         <div>
-                                            <strong>Experto:</strong>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
-                                                {dispute.expert_attachments!.map((p, idx) => (
-                                                    isImagePath(p) && signedMap[p] ? (
-                                                        <div key={p + idx} style={{ width: 96, height: 96, position: 'relative', border: '1px solid #eee', borderRadius: 6, overflow: 'hidden' }}>
-                                                            <Image src={signedMap[p]} alt="Evidencia" fill sizes="96px" style={{ objectFit: 'cover' }} onClick={() => window.open(signedMap[p], '_blank')} />
-                                                        </div>
-                                                    ) : (
-                                                        <Button key={p + idx} size="sm" variant="outline" onClick={() => viewAttachment(p)}>Ver evidencia</Button>
-                                                    )
-                                                ))}
-                                            </div>
+                                            <strong>Contra:</strong> {dispute.reporter?.role === 'client'
+                                                ? dispute.booking?.expert?.full_name
+                                                : dispute.booking?.user?.full_name} ({dispute.reporter?.role === 'client' ? 'Experto' : 'Cliente'})
                                         </div>
-                                    )}
-                                </div>
-                            ) : null}
-
-                            {dispute.status === 'open' && (
-                                <div style={{ borderTop: '1px solid #eee', paddingTop: '1rem' }}>
-                                    <h4 style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>{dict[lang].resolveTitle}</h4>
-
-                                    <div style={{ marginBottom: '0.5rem' }}>
-                                        <textarea
-                                            placeholder={dict[lang].textareaPlaceholder}
-                                            value={resolving === dispute.id ? resolutionNotes : ''}
-                                            onChange={(e) => {
-                                                setResolving(dispute.id);
-                                                setResolutionNotes(e.target.value);
-                                            }}
-                                            style={{ width: '100%', padding: '0.5rem', border: '1px solid #ddd', borderRadius: '4px' }}
-                                        />
-                                    </div>
-
-                                    <div style={{ display: 'flex', gap: '1rem' }}>
-                                        <Button
-                                            size="sm"
-                                            style={{ background: '#198754', color: 'white' }}
-                                            onClick={() => handleResolve(dispute.id, 'resolved_refunded')}
-                                        >
-                                            <CheckCircle size={16} /> {dict[lang].refund}
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            style={{ background: '#dc3545', color: 'white' }}
-                                            variant="outline"
-                                            onClick={() => handleResolve(dispute.id, 'resolved_dismissed')}
-                                        >
-                                            <XCircle size={16} /> {dict[lang].dismiss}
-                                        </Button>
                                     </div>
                                 </div>
-                            )}
 
-                            {dispute.status !== 'open' && (
-                                <div style={{ fontSize: '0.9rem', color: '#666', fontStyle: 'italic' }}>
-                                    {dict[lang].resolvedLabel}: {dispute.resolution_notes || 'Sin notas'}
-                                    {dispute.resolved_at ? ` · ${new Date(dispute.resolved_at).toLocaleString()}` : ''}
+                                {/* Description */}
+                                <div style={{
+                                    background: 'rgb(var(--background))',
+                                    padding: '1rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    marginBottom: '1rem'
+                                }}>
+                                    <strong style={{ fontSize: '0.875rem' }}>Descripción:</strong>
+                                    <p style={{ margin: '0.5rem 0 0', color: 'rgb(var(--text-main))' }}>{dispute.description}</p>
                                 </div>
-                            )}
-                        </div>
-                    ))}
+
+                                {/* Responses */}
+                                {dispute.expert_response && (
+                                    <div style={{ borderTop: '1px solid rgb(var(--border))', paddingTop: '0.75rem', marginBottom: '1rem' }}>
+                                        <strong style={{ fontSize: '0.875rem', color: 'rgb(var(--info))' }}>Respuesta del experto:</strong>
+                                        <p style={{ margin: '0.5rem 0 0' }}>{dispute.expert_response}</p>
+                                    </div>
+                                )}
+                                {dispute.user_response && (
+                                    <div style={{ borderTop: '1px solid rgb(var(--border))', paddingTop: '0.75rem', marginBottom: '1rem' }}>
+                                        <strong style={{ fontSize: '0.875rem', color: 'rgb(var(--primary))' }}>Respuesta del usuario:</strong>
+                                        <p style={{ margin: '0.5rem 0 0' }}>{dispute.user_response}</p>
+                                    </div>
+                                )}
+
+                                {/* Attachments */}
+                                {((dispute.user_attachments && dispute.user_attachments.length > 0) || (dispute.expert_attachments && dispute.expert_attachments.length > 0)) && (
+                                    <div style={{ borderTop: '1px solid rgb(var(--border))', paddingTop: '1rem', marginBottom: '1rem' }}>
+                                        <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', fontWeight: 600 }}>Evidencias</h4>
+                                        {dispute.user_attachments && dispute.user_attachments.length > 0 && (
+                                            <div style={{ marginBottom: '0.75rem' }}>
+                                                <strong style={{ fontSize: '0.85rem' }}>Del usuario:</strong>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                                    {dispute.user_attachments.map((p, idx) => (
+                                                        isImagePath(p) && signedMap[p] ? (
+                                                            <div key={p + idx} style={{ width: 80, height: 80, position: 'relative', border: '1px solid rgb(var(--border))', borderRadius: 'var(--radius-md)', overflow: 'hidden', cursor: 'pointer' }}>
+                                                                <Image src={signedMap[p]} alt="Evidencia" fill sizes="80px" style={{ objectFit: 'cover' }} onClick={() => window.open(signedMap[p], '_blank')} />
+                                                            </div>
+                                                        ) : (
+                                                            <Button key={p + idx} size="sm" variant="outline" onClick={() => viewAttachment(p)}>Ver archivo</Button>
+                                                        )
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {dispute.expert_attachments && dispute.expert_attachments.length > 0 && (
+                                            <div>
+                                                <strong style={{ fontSize: '0.85rem' }}>Del experto:</strong>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                                    {dispute.expert_attachments.map((p, idx) => (
+                                                        isImagePath(p) && signedMap[p] ? (
+                                                            <div key={p + idx} style={{ width: 80, height: 80, position: 'relative', border: '1px solid rgb(var(--border))', borderRadius: 'var(--radius-md)', overflow: 'hidden', cursor: 'pointer' }}>
+                                                                <Image src={signedMap[p]} alt="Evidencia" fill sizes="80px" style={{ objectFit: 'cover' }} onClick={() => window.open(signedMap[p], '_blank')} />
+                                                            </div>
+                                                        ) : (
+                                                            <Button key={p + idx} size="sm" variant="outline" onClick={() => viewAttachment(p)}>Ver archivo</Button>
+                                                        )
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Resolution Actions */}
+                                {dispute.status === 'open' && (
+                                    <div style={{ borderTop: '1px solid rgb(var(--border))', paddingTop: '1rem' }}>
+                                        <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', fontWeight: 600 }}>Resolver Disputa</h4>
+                                        <div style={{ marginBottom: '0.75rem' }}>
+                                            <textarea
+                                                placeholder="Notas de resolución (mensaje para las partes involucradas)..."
+                                                value={resolving === dispute.id ? resolutionNotes : ''}
+                                                onChange={(e) => {
+                                                    setResolving(dispute.id);
+                                                    setResolutionNotes(e.target.value);
+                                                }}
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '0.75rem',
+                                                    border: '1px solid rgb(var(--border))',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    background: 'rgb(var(--background))',
+                                                    color: 'rgb(var(--text-main))',
+                                                    fontSize: '0.875rem',
+                                                    minHeight: '80px',
+                                                    resize: 'vertical'
+                                                }}
+                                            />
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                            <Button
+                                                size="sm"
+                                                style={{ background: 'rgb(var(--success))', color: 'white', gap: '0.5rem' }}
+                                                onClick={() => handleResolve(dispute.id, 'resolved_refunded')}
+                                            >
+                                                <CheckCircle size={16} /> Aprobar Reembolso (Cliente)
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                style={{ borderColor: 'rgb(var(--error))', color: 'rgb(var(--error))', gap: '0.5rem' }}
+                                                onClick={() => handleResolve(dispute.id, 'resolved_dismissed')}
+                                            >
+                                                <XCircle size={16} /> Desestimar (Experto)
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Resolution Info */}
+                                {dispute.status !== 'open' && (
+                                    <div style={{
+                                        borderTop: '1px solid rgb(var(--border))',
+                                        paddingTop: '1rem',
+                                        color: 'rgb(var(--text-secondary))',
+                                        fontSize: '0.875rem'
+                                    }}>
+                                        <strong>Resolución:</strong> {dispute.resolution_notes || 'Sin notas'}
+                                        {dispute.resolved_at && (
+                                            <span style={{ marginLeft: '0.5rem' }}>
+                                                • {new Date(dispute.resolved_at).toLocaleString('es-CO')}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
-        </div>
+        </>
     );
 }
