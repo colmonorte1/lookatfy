@@ -90,7 +90,8 @@ export default async function AdminExpertsPage({ searchParams }: PageProps) {
     }
 
     // Fetch profiles separately to avoid RLS issues with joins
-    const expertIds = (allExperts || []).map((e: any) => e.id);
+    // Note: expert.id = profile.id in this schema (1:1 relationship)
+    const expertIds = (allExperts || []).map((e: any) => e.id).filter(Boolean);
     let profilesMap: Record<string, { full_name?: string | null; email?: string | null }> = {};
 
     if (expertIds.length > 0) {
@@ -107,7 +108,7 @@ export default async function AdminExpertsPage({ searchParams }: PageProps) {
         }
     }
 
-    // Merge experts with profiles
+    // Merge experts with profiles (expert.id = profile.id)
     let expertsWithProfiles = (allExperts || []).map((expert: any) => ({
         ...expert,
         profiles: profilesMap[expert.id] || null

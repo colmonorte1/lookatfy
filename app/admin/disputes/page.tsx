@@ -2,7 +2,7 @@ import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 import { createServerClient } from '@supabase/ssr';
 import DisputesClient from './DisputesClient';
-import DisputesDashboard from './DisputesDashboard';
+import DisputesDashboard, { type DisputeStats } from './DisputesDashboard';
 import SearchFilters from './SearchFilters';
 import Pagination from '@/components/ui/Pagination/Pagination';
 import Alert from '@/components/ui/Alert/Alert';
@@ -221,6 +221,108 @@ export default async function DisputesPage({ searchParams }: PageProps) {
     const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
     const paginatedDisputes = enrichedDisputes.slice(offset, offset + ITEMS_PER_PAGE);
 
+    // Calculate stats for dashboard (using ALL disputes, not filtered)
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    // All disputes stats
+    const openCount = disputes.filter(d => d.status === 'open').length;
+    const underReviewCount = disputes.filter(d => d.status === 'under_review').length;
+
+    const resolvedThisMonth = disputes.filter(d => {
+        if (!['resolved_refunded', 'resolved_dismissed'].includes(d.status)) return false;
+        const resolvedAt = d.resolved_at ? new Date(d.resolved_at) : null;
+        return resolvedAt && resolvedAt >= startOfMonth;
+    });
+    const resolvedThisMonthCount = resolvedThisMonth.length;
+    const refundedThisMonthCount = resolvedThisMonth.filter(d => d.status === 'resolved_refunded').length;
+    const dismissedThisMonthCount = resolvedThisMonth.filter(d => d.status === 'resolved_dismissed').length;
+
+    const resolvedLastMonth = disputes.filter(d => {
+        if (!['resolved_refunded', 'resolved_dismissed'].includes(d.status)) return false;
+        const resolvedAt = d.resolved_at ? new Date(d.resolved_at) : null;
+        return resolvedAt && resolvedAt >= startOfLastMonth && resolvedAt <= endOfLastMonth;
+    });
+
+    // Historical totals
+    const allResolved = disputes.filter(d => ['resolved_refunded', 'resolved_dismissed'].includes(d.status));
+    const totalResolved = allResolved.length;
+    const totalRefunded = disputes.filter(d => d.status === 'resolved_refunded').length;
+    const totalDismissed = disputes.filter(d => d.status === 'resolved_dismissed').length;
+
+    const refundRate = totalResolved > 0 ? (totalRefunded / totalResolved) * 100 : 0;
+
+    // Average resolution time
+    const resolutionTimes = allResolved
+        .filter(d => d.resolved_at && d.created_at)
+        .map(d => {
+            const created = new Date(d.created_at).getTime();
+            const resolved = new Date(d.resolved_at!).getTime();
+            return (resolved - created) / (1000 * 60 * 60);
+        });
+    const avgResolutionHours = resolutionTimes.length > 0
+        ? resolutionTimes.reduce((a, b) => a + b, 0) / resolutionTimes.length
+        : 0;
+
+    // Unique users and experts
+    const userIds = new Set<string>();
+    const expertIds = new Set<string>();
+    disputes.forEach(d => {
+        const booking = d.booking_id ? bookingsMap[d.booking_id] : null;
+        if (booking?.user_id) userIds.add(booking.user_id);
+        if (booking?.expert_id) expertIds.add(booking.expert_id);
+    });
+
+    // Status distribution
+    const statusCount: Record<string, number> = {};
+    disputes.forEach(d => {
+        statusCount[d.status] = (statusCount[d.status] || 0) + 1;
+    });
+    const statusDistribution = Object.entries(statusCount).map(([status, count]) => ({ status, count }));
+
+    // Reason distribution
+    const reasonCount: Record<string, number> = {};
+    disputes.forEach(d => {
+        const reason = d.reason || 'Sin especificar';
+        reasonCount[reason] = (reasonCount[reason] || 0) + 1;
+    });
+    const reasonDistribution = Object.entries(reasonCount)
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+    // Changes calculation
+    const openLastMonth = disputes.filter(d => {
+        const createdAt = new Date(d.created_at);
+        return d.status === 'open' && createdAt >= startOfLastMonth && createdAt <= endOfLastMonth;
+    }).length;
+
+    const calcChange = (current: number, previous: number) => {
+        if (previous === 0) return current > 0 ? 100 : 0;
+        return ((current - previous) / previous) * 100;
+    };
+
+    const stats: DisputeStats = {
+        openCount,
+        underReviewCount,
+        resolvedThisMonthCount,
+        refundedThisMonthCount,
+        dismissedThisMonthCount,
+        totalResolved,
+        totalRefunded,
+        totalDismissed,
+        avgResolutionHours,
+        refundRate,
+        uniqueUsers: userIds.size,
+        uniqueExperts: expertIds.size,
+        statusDistribution,
+        reasonDistribution,
+        openChange: calcChange(openCount, openLastMonth),
+        resolvedChange: calcChange(resolvedThisMonthCount, resolvedLastMonth.length)
+    };
+
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -238,7 +340,7 @@ export default async function DisputesPage({ searchParams }: PageProps) {
             )}
 
             {/* Dashboard with KPIs */}
-            <DisputesDashboard />
+            <DisputesDashboard stats={stats} />
 
             {/* Search and Filters */}
             <SearchFilters />

@@ -1,31 +1,9 @@
-import { Users, Video, DollarSign, LayoutDashboard, AlertTriangle, Percent, Clock } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
 import AdminDashboardClient from '@/components/admin/AdminDashboardClient';
 import KPICard from '@/components/admin/KPICard';
 import { redirect } from 'next/navigation';
 
 // TypeScript interfaces for type safety
-interface SupabaseBookingRaw {
-    id: string;
-    price: number | string;
-    currency: string;
-    status: string;
-    created_at: string;
-    user_id: string;
-    expert_id: string;
-    expert?: Array<{
-        profile?: Array<{
-            full_name?: string;
-        }>;
-    }>;
-    service?: Array<{
-        title?: string;
-        category?: string;
-        country?: string;
-        rating_avg?: number;
-    }>;
-}
-
 interface ProcessedBooking {
     id: string;
     price: number;
@@ -34,6 +12,7 @@ interface ProcessedBooking {
     created_at: string;
     user_id: string;
     expert_id: string;
+    service_id: string;
     expert_name?: string;
     service_category?: string | null;
     service_country?: string | null;
@@ -87,31 +66,57 @@ export default async function AdminDashboardPage() {
     const start90 = new Date(baseDateTs - 90 * DAY_MS);
     const start90ISO = start90.toISOString();
 
-    const { data: bookings90 } = await supabase
+    // Query bookings separately (no JOINs to avoid RLS issues)
+    const { data: bookingsRaw } = await supabase
         .from('bookings')
-        .select(`
-            id, price, currency, status, created_at, user_id, expert_id,
-            expert:experts!expert_id(
-                profile:profiles(full_name)
-            ),
-            service:services!service_id(title, category, country, rating_avg)
-        `)
+        .select('id, price, currency, status, created_at, user_id, expert_id, service_id')
         .in('status', ['confirmed', 'completed'])
         .gte('created_at', start90ISO);
 
-    const b90: ProcessedBooking[] = (bookings90 || []).map((b: SupabaseBookingRaw) => ({
-        id: b.id,
-        price: Number(b.price) || 0,
-        currency: b.currency || 'USD',
-        status: b.status,
-        created_at: b.created_at,
-        user_id: b.user_id,
-        expert_id: b.expert_id,
-        expert_name: b.expert?.[0]?.profile?.[0]?.full_name,
-        service_category: b.service?.[0]?.category ?? null,
-        service_country: b.service?.[0]?.country ?? null,
-        service_rating_avg: b.service?.[0]?.rating_avg ?? null,
-    }));
+    const bookings90 = bookingsRaw || [];
+
+    // Get unique expert_ids and service_ids for separate queries
+    const expertIds = [...new Set(bookings90.map(b => b.expert_id).filter(Boolean))];
+    const serviceIds = [...new Set(bookings90.map(b => b.service_id).filter(Boolean))];
+
+    // Query experts and profiles separately
+    const { data: expertsData } = expertIds.length > 0
+        ? await supabase.from('experts').select('id, user_id').in('id', expertIds)
+        : { data: [] };
+
+    const expertUserIds = (expertsData || []).map((e: { user_id: string }) => e.user_id).filter(Boolean);
+    const { data: profilesData } = expertUserIds.length > 0
+        ? await supabase.from('profiles').select('id, full_name').in('id', expertUserIds)
+        : { data: [] };
+
+    // Query services separately
+    const { data: servicesData } = serviceIds.length > 0
+        ? await supabase.from('services').select('id, title, category, country, rating_avg').in('id', serviceIds)
+        : { data: [] };
+
+    // Create lookup maps
+    const profilesMap = new Map((profilesData || []).map((p: { id: string; full_name: string }) => [p.id, p.full_name]));
+    const expertsMap = new Map((expertsData || []).map((e: { id: string; user_id: string }) => [e.id, profilesMap.get(e.user_id)]));
+    const servicesMap = new Map((servicesData || []).map((s: { id: string; category?: string; country?: string; rating_avg?: number }) => [s.id, s]));
+
+    // Process bookings with merged data
+    const b90: ProcessedBooking[] = bookings90.map((b) => {
+        const service = servicesMap.get(b.service_id);
+        return {
+            id: b.id,
+            price: Number(b.price) || 0,
+            currency: b.currency || 'USD',
+            status: b.status,
+            created_at: b.created_at,
+            user_id: b.user_id,
+            expert_id: b.expert_id,
+            service_id: b.service_id,
+            expert_name: expertsMap.get(b.expert_id) || undefined,
+            service_category: service?.category ?? null,
+            service_country: service?.country ?? null,
+            service_rating_avg: service?.rating_avg ?? null,
+        };
+    });
 
     // Optimized: Calculate all metrics in a single pass
     const metrics = b90.reduce((acc, booking) => {
@@ -262,7 +267,7 @@ export default async function AdminDashboardPage() {
                     title="Usuarios Totales"
                     value={usersCount || 0}
                     change={0}
-                    icon={Users}
+                    icon="Users"
                     color="primary"
                     tooltip="Total de usuarios registrados en la plataforma"
                 />
@@ -270,7 +275,7 @@ export default async function AdminDashboardPage() {
                     title="Expertos Totales"
                     value={expertsCount || 0}
                     change={0}
-                    icon={Video}
+                    icon="Video"
                     color="secondary"
                     tooltip="Total de expertos registrados en la plataforma"
                 />
@@ -278,20 +283,17 @@ export default async function AdminDashboardPage() {
                     title="Transacciones 30 días"
                     value={txCount30}
                     change={txCountChange}
-                    icon={LayoutDashboard}
+                    icon="LayoutDashboard"
                     color="warning"
                     tooltip="Número de transacciones completadas en los últimos 30 días vs período anterior"
                     sparkline={txSparkline}
-                    threshold={{
-                        check: (val: number) => val === 0,
-                        message: "No hay transacciones en los últimos 30 días"
-                    }}
+                    threshold={{ value: 0, type: 'equal', message: "No hay transacciones en los últimos 30 días" }}
                 />
                 <KPICard
                     title="Volumen 30 días"
                     value={formatMoney(volume30)}
                     change={volumeChange}
-                    icon={DollarSign}
+                    icon="DollarSign"
                     color="success"
                     tooltip="Volumen total facturado en los últimos 30 días vs período anterior"
                     sparkline={volumeSparkline}
@@ -300,7 +302,7 @@ export default async function AdminDashboardPage() {
                     title={`Comisiones (${Math.round(commissionRate * 100)}%) 30 días`}
                     value={formatMoney(fees30)}
                     change={feesChange}
-                    icon={DollarSign}
+                    icon="DollarSign"
                     color="success"
                     tooltip="Comisiones generadas en los últimos 30 días vs período anterior"
                     sparkline={feesSparkline}
@@ -309,31 +311,25 @@ export default async function AdminDashboardPage() {
                     title="Finalización 30 días"
                     value={formatPct(completionRate30)}
                     change={completionRateChange}
-                    icon={Percent}
+                    icon="Percent"
                     color="secondary"
                     tooltip="Porcentaje de transacciones completadas exitosamente"
-                    threshold={{
-                        check: (val: string) => parseFloat(val) < 80,
-                        message: "Tasa de finalización por debajo del 80%"
-                    }}
+                    threshold={{ value: 80, type: 'below', message: "Tasa de finalización por debajo del 80%" }}
                 />
                 <KPICard
                     title="Expertos activos 30 días"
                     value={uniqueExperts30}
                     change={uniqueExpertsChange}
-                    icon={Video}
+                    icon="Video"
                     color="primary"
                     tooltip="Número de expertos con al menos 1 transacción en los últimos 30 días"
-                    threshold={{
-                        check: (val: number) => val === 0,
-                        message: "No hay expertos activos"
-                    }}
+                    threshold={{ value: 0, type: 'equal', message: "No hay expertos activos" }}
                 />
                 <KPICard
                     title="ARPU 30 días"
                     value={formatMoney(arpu30)}
                     change={arpuChange}
-                    icon={DollarSign}
+                    icon="DollarSign"
                     color="primary"
                     tooltip="Ingreso promedio por usuario (Average Revenue Per User)"
                 />
@@ -341,37 +337,28 @@ export default async function AdminDashboardPage() {
                     title="Disputas activas"
                     value={activeDisputesCount}
                     change={activeDisputesChange}
-                    icon={AlertTriangle}
+                    icon="AlertTriangle"
                     color="warning"
                     tooltip="Disputas abiertas o en revisión actualmente"
-                    threshold={{
-                        check: (val: number) => val > 5,
-                        message: "Alto número de disputas activas"
-                    }}
+                    threshold={{ value: 5, type: 'above', message: "Alto número de disputas activas" }}
                 />
                 <KPICard
                     title="Tasa de disputa 30 días"
                     value={formatPct(disputesRate30)}
                     change={disputesRateChange}
-                    icon={AlertTriangle}
+                    icon="AlertTriangle"
                     color="warning"
                     tooltip="Porcentaje de transacciones que generaron disputas"
-                    threshold={{
-                        check: (val: string) => parseFloat(val) > 5,
-                        message: "Tasa de disputas superior al 5%"
-                    }}
+                    threshold={{ value: 5, type: 'above', message: "Tasa de disputas superior al 5%" }}
                 />
                 <KPICard
                     title="Tiempo medio resolución"
                     value={`${avgResolutionDays.toFixed(1)} días`}
                     change={avgResolutionChange}
-                    icon={Clock}
+                    icon="Clock"
                     color="secondary"
                     tooltip="Tiempo promedio para resolver disputas"
-                    threshold={{
-                        check: (val: string) => parseFloat(val) > 7,
-                        message: "Tiempo de resolución superior a 7 días"
-                    }}
+                    threshold={{ value: 7, type: 'above', message: "Tiempo de resolución superior a 7 días" }}
                 />
             </div>
 

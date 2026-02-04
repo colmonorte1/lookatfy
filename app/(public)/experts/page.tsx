@@ -5,37 +5,46 @@ import { Expert } from '@/lib/data/experts';
 export default async function ExpertsPage() {
     const supabase = await createClient();
 
-    const { data: experts } = await supabase
+    // 1. Fetch experts (no JOINs to avoid RLS issues)
+    const { data: expertsRaw } = await supabase
         .from('experts')
-        .select(`
-            *,
-            profile:profiles (
-                full_name,
-                avatar_url
-            ),
-            services:services (
-                price,
-                status,
-                category
-            )
-        `)
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(100);
 
-    type ExpertRow = {
-        id: string;
-        title?: string;
-        rating?: number;
-        reviews_count?: number;
-        profile?: { full_name?: string; avatar_url?: string };
-        services?: Array<{ price?: number; status?: string; category?: string }>;
-        languages?: Array<{ name: string; level: string }> | null;
-        skills?: Array<{ name: string; level: string }> | null;
-    };
+    const expertsData = expertsRaw || [];
+    const expertIds = expertsData.map((e: any) => e.id).filter(Boolean);
 
-    const rows = (experts as ExpertRow[] || []);
-    const expertIds = rows.map(e => e.id).filter(Boolean);
+    // 2. Fetch profiles for experts (expert.id = profile.id in this schema)
+    let profilesMap: Record<string, { full_name?: string; avatar_url?: string }> = {};
 
+    if (expertIds.length > 0) {
+        const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url')
+            .in('id', expertIds);
+
+        (profiles || []).forEach((p: any) => {
+            profilesMap[p.id] = { full_name: p.full_name, avatar_url: p.avatar_url };
+        });
+    }
+
+    // 3. Fetch services for experts
+    let servicesMap: Record<string, Array<{ price?: number; status?: string; category?: string }>> = {};
+
+    if (expertIds.length > 0) {
+        const { data: services } = await supabase
+            .from('services')
+            .select('expert_id, price, status, category')
+            .in('expert_id', expertIds);
+
+        (services || []).forEach((s: any) => {
+            if (!servicesMap[s.expert_id]) servicesMap[s.expert_id] = [];
+            servicesMap[s.expert_id].push({ price: s.price, status: s.status, category: s.category });
+        });
+    }
+
+    // 4. Fetch ratings for experts
     const ratingMap: Record<string, { avg: number; count: number }> = {};
     if (expertIds.length) {
         const { data: ratingsData } = await supabase
@@ -59,19 +68,22 @@ export default async function ExpertsPage() {
         });
     }
 
-    const items: Expert[] = rows.map((e) => {
-        const firstActiveService = Array.isArray(e.services) ? e.services.find((s) => s.status === 'active') : null;
-        const categories: string[] = Array.isArray(e.services)
-            ? Array.from(new Set(e.services.map((s) => s.category).filter((v): v is string => typeof v === 'string')))
-            : [];
+    // 5. Build experts list with merged data
+    const items: Expert[] = expertsData.map((e: any) => {
+        const profile = profilesMap[e.id];
+        const expertServices = servicesMap[e.id] || [];
+        const firstActiveService = expertServices.find((s) => s.status === 'active');
+        const categories: string[] = Array.from(
+            new Set(expertServices.map((s) => s.category).filter((v): v is string => typeof v === 'string'))
+        );
         return {
             id: e.id,
-            name: e.profile?.full_name || 'Experto',
+            name: profile?.full_name || 'Experto',
             title: e.title || 'Asesoría',
             rating: ratingMap[e.id]?.avg ?? e.rating ?? 5.0,
             reviews: ratingMap[e.id]?.count ?? e.reviews_count ?? 0,
             price: firstActiveService?.price || 0,
-            image: e.profile?.avatar_url || 'https://i.pravatar.cc/400?u=expert',
+            image: profile?.avatar_url || 'https://i.pravatar.cc/400?u=expert',
             tags: categories,
             bio: '',
             isOnline: Boolean(firstActiveService),
@@ -90,14 +102,6 @@ export default async function ExpertsPage() {
             </header>
 
             <ExpertsClient items={items} />
-
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '2rem'
-            }}>
-                
-            </div>
         </main>
     );
 }

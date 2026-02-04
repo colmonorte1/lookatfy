@@ -23,22 +23,39 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
     const { id } = await params;
     const supabase = await createClient();
 
-    const { data: expertRow } = await supabase
+    // 1. Fetch expert (no JOINs to avoid RLS issues)
+    const { data: expertRaw } = await supabase
         .from('experts')
-        .select(`
-            *,
-            profile:profiles(full_name, avatar_url, city, country),
-            services:services(*)
-        `)
+        .select('*')
         .eq('id', id)
         .single();
 
-    if (!expertRow) {
+    if (!expertRaw) {
         notFound();
     }
 
-    const expertName = expertRow.profile?.full_name || 'Experto';
-    const expertAvatar = expertRow.profile?.avatar_url || 'https://i.pravatar.cc/200?u=expert';
+    // 2. Fetch profile separately (expert.id = profile.id)
+    const { data: profileData } = await supabase
+        .from('profiles')
+        .select('full_name, avatar_url, city, country')
+        .eq('id', id)
+        .single();
+
+    // 3. Fetch services separately
+    const { data: servicesData } = await supabase
+        .from('services')
+        .select('*')
+        .eq('expert_id', id);
+
+    // 4. Build expert row with merged data
+    const expertRow = {
+        ...expertRaw,
+        profile: profileData || null,
+        services: servicesData || []
+    };
+
+    const expertName = profileData?.full_name || 'Experto';
+    const expertAvatar = profileData?.avatar_url || 'https://i.pravatar.cc/200?u=expert';
     const expertTitle = expertRow.title || 'Asesoría';
     let rating = 5.0;
     let reviewsCount = 0;
@@ -78,20 +95,26 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
             .from('bookings')
             .select('id, service_id')
             .in('service_id', serviceIds);
-        type BookingRow = { id: string };
-        const bookingIds = (bookings || []).map((b: BookingRow) => b.id);
+
+        const bookingsData = bookings || [];
+        const bookingIds = bookingsData.map((b: any) => b.id);
+
         if (bookingIds.length) {
+            // Fetch reviews without JOINs
             const { data: reviewsRows } = await supabase
                 .from('reviews')
-                .select(`
-                    rating,
-                    booking:bookings!booking_id ( service_id )
-                `)
+                .select('rating, booking_id')
                 .in('booking_id', bookingIds);
+
+            // Create booking -> service_id map
+            const bookingServiceMap: Record<string, string> = {};
+            bookingsData.forEach((b: any) => {
+                bookingServiceMap[b.id] = b.service_id;
+            });
+
             const agg: Record<string, number[]> = {};
-            type JoinedReviewRow = { rating?: number | string | null; booking?: { service_id?: string }[] | { service_id?: string } };
-            (reviewsRows || []).forEach((r: JoinedReviewRow) => {
-                const sid = Array.isArray(r.booking) ? r.booking[0]?.service_id : r.booking?.service_id;
+            (reviewsRows || []).forEach((r: any) => {
+                const sid = bookingServiceMap[r.booking_id];
                 const val = Number(r.rating);
                 if (sid && !isNaN(val)) {
                     if (!agg[sid]) agg[sid] = [];
@@ -106,32 +129,37 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
         }
     }
 
-    const { data: reviewsData } = await supabase
+    // Fetch reviews without JOINs
+    const { data: reviewsRaw } = await supabase
         .from('reviews')
-        .select(`
-            id,
-            rating,
-            comment,
-            created_at,
-            reviewer:profiles(full_name, avatar_url)
-        `)
+        .select('id, rating, comment, created_at, reviewer_id')
         .eq('subject_id', id)
         .order('created_at', { ascending: false })
         .limit(6);
 
-    type ReviewRow = {
-        id: string;
-        rating?: number | string | null;
-        comment?: string | null;
-        created_at: string;
-        reviewer?: { full_name?: string | null; avatar_url?: string | null } | { full_name?: string | null; avatar_url?: string | null }[] | null;
-    };
-    const reviews = (reviewsData || []).map((r: ReviewRow) => {
-        const reviewerObj = Array.isArray(r.reviewer) ? r.reviewer[0] : r.reviewer;
+    const reviewsDataRaw = reviewsRaw || [];
+
+    // Fetch reviewer profiles
+    const reviewerIds = [...new Set(reviewsDataRaw.map((r: any) => r.reviewer_id).filter(Boolean))];
+    let reviewersMap: Record<string, { full_name?: string; avatar_url?: string }> = {};
+
+    if (reviewerIds.length > 0) {
+        const { data: reviewerProfiles } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url')
+            .in('id', reviewerIds);
+
+        (reviewerProfiles || []).forEach((p: any) => {
+            reviewersMap[p.id] = { full_name: p.full_name, avatar_url: p.avatar_url };
+        });
+    }
+
+    const reviews = reviewsDataRaw.map((r: any) => {
+        const reviewer = reviewersMap[r.reviewer_id];
         return {
             id: r.id,
-            author: reviewerObj?.full_name || 'Usuario',
-            avatar: reviewerObj?.avatar_url || undefined,
+            author: reviewer?.full_name || 'Usuario',
+            avatar: reviewer?.avatar_url || undefined,
             rating: Number(r.rating) || 5,
             date: new Date(r.created_at).toLocaleDateString(),
             comment: r.comment || ''

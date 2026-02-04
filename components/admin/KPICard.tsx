@@ -1,22 +1,42 @@
 'use client';
 
-import { TrendingUp, TrendingDown, HelpCircle, LucideIcon } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Users, Video, DollarSign, LayoutDashboard, AlertTriangle, Percent, Clock, Activity, ShoppingBag, Star, Calendar, type LucideIcon } from 'lucide-react';
+
+// Icon mapping for serialization from Server Components
+const iconMap: Record<string, LucideIcon> = {
+    Users,
+    Video,
+    DollarSign,
+    LayoutDashboard,
+    AlertTriangle,
+    Percent,
+    Clock,
+    Activity,
+    ShoppingBag,
+    Star,
+    Calendar,
+    TrendingUp,
+    TrendingDown,
+    HelpCircle
+};
 
 interface KPICardProps {
     title: string;
     value: string | number;
     change: number;
-    icon: LucideIcon;
+    icon: string; // Changed to string for serialization
     color: string;
     tooltip?: string;
     threshold?: {
-        check: (val: string | number) => boolean;
+        value: number;
+        type: 'above' | 'below' | 'equal';
         message: string;
     };
     sparkline?: number[];
 }
 
-export default function KPICard({ title, value, change, icon: Icon, color, tooltip, threshold, sparkline }: KPICardProps) {
+export default function KPICard({ title, value, change, icon, color, tooltip, threshold, sparkline }: KPICardProps) {
+    const Icon = iconMap[icon] || Activity;
     const changeNum = typeof change === 'number' ? change : 0;
     const isPositive = changeNum > 0;
     const isNegative = changeNum < 0;
@@ -24,7 +44,18 @@ export default function KPICard({ title, value, change, icon: Icon, color, toolt
     const TrendIcon = isPositive ? TrendingUp : isNegative ? TrendingDown : null;
 
     // Check if value breaches threshold (if provided)
-    const hasWarning = threshold && threshold.check && threshold.check(value);
+    const checkThreshold = () => {
+        if (!threshold) return false;
+        const numValue = typeof value === 'string' ? parseFloat(value) : value;
+        if (isNaN(numValue)) return false;
+        switch (threshold.type) {
+            case 'above': return numValue > threshold.value;
+            case 'below': return numValue < threshold.value;
+            case 'equal': return numValue === threshold.value;
+            default: return false;
+        }
+    };
+    const hasWarning = checkThreshold();
 
     // Generate SVG sparkline path
     const generateSparklinePath = (data: number[]) => {
