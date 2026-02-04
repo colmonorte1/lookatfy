@@ -57,16 +57,28 @@ function CheckoutContent() {
 
     const [loadingUser, setLoadingUser] = useState(true);
 
-    // Get data from URL params
-    const serviceTitle = searchParams.get('title') || 'Servicio Profesional';
+    // Validated price from database (to prevent URL manipulation)
+    const [validatedPrice, setValidatedPrice] = useState<number | null>(null);
+    const [validatedCurrency, setValidatedCurrency] = useState<string | null>(null);
+    const [priceValidationError, setPriceValidationError] = useState<string | null>(null);
+
+    const [intent, setIntent] = useState<{ title?: string; currency?: string; image?: string; serviceId?: string; expertId?: string; date?: string; time?: string } | null>(null);
+    useEffect(() => {
+        try {
+            const raw = sessionStorage.getItem('checkout_intent');
+            if (raw) setIntent(JSON.parse(raw));
+        } catch {}
+    }, []);
+
+    const serviceTitle = (intent?.title ?? searchParams.get('title')) || 'Servicio Profesional';
     const expertName = searchParams.get('expert') || 'Experto Lookatfy';
     const price = parseFloat(searchParams.get('price') || '0');
-    const date = searchParams.get('date') || '';
-    const time = searchParams.get('time') || '';
-    const currency = searchParams.get('currency') || 'USD';
-    const image = searchParams.get('image') || '';
-    const serviceId = searchParams.get('serviceId');
-    const expertId = searchParams.get('expertId');
+    const date = (intent?.date ?? searchParams.get('date')) || '';
+    const time = (intent?.time ?? searchParams.get('time')) || '';
+    const currency = (intent?.currency ?? searchParams.get('currency')) || 'USD';
+    const image = (intent?.image ?? searchParams.get('image')) || '';
+    const serviceId = intent?.serviceId ?? searchParams.get('serviceId');
+    const expertId = intent?.expertId ?? searchParams.get('expertId');
 
     const formatAmount = (cur: string, amount: number) => {
         if (cur === 'COP') {
@@ -77,6 +89,10 @@ function CheckoutContent() {
         }
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
     };
+
+    // Use validated price if available, otherwise fallback to URL price
+    const displayPrice = validatedPrice !== null ? validatedPrice : price;
+    const displayCurrency = validatedCurrency !== null ? validatedCurrency : currency;
 
     // Fetch User Info on Mount
     useEffect(() => {
@@ -100,17 +116,64 @@ function CheckoutContent() {
                         const { data: expertRow } = await supabase.from('experts').select('country').eq('id', expertId).single();
                         targetCountry = String(expertRow?.country || '');
                     }
-                } catch {}
+                } catch { }
                 try {
                     const { data: svc } = await supabase.from('admin_services').select('id,name,price,country_code,active');
                     const list = (svc || []).filter((s: any) => !!s.active && (!s.country_code || s.country_code === targetCountry)).map((s: any) => ({ id: String(s.id), name: String(s.name), price: Number(s.price) }));
                     setAddons(list);
-                } catch {}
+                } catch { }
             }
             setLoadingUser(false);
         };
         fetchUser();
     }, []);
+
+    // Validate service price on mount (prevent URL manipulation)
+    useEffect(() => {
+        const validatePrice = async () => {
+            if (!serviceId) {
+                setPriceValidationError('ID de servicio no válido');
+                return;
+            }
+
+            try {
+                const supabase = createClient();
+                const { data: serviceData, error: serviceError } = await supabase
+                    .from('services')
+                    .select('price, currency')
+                    .eq('id', serviceId)
+                    .single();
+
+                if (serviceError || !serviceData) {
+                    setPriceValidationError('No se pudo validar el precio del servicio');
+                    return;
+                }
+
+                const dbPrice = Number(serviceData.price);
+                const dbCurrency = String(serviceData.currency);
+
+                // Check if URL price matches database price
+                if (Math.abs(dbPrice - price) > 0.01 || dbCurrency !== currency) {
+                    console.warn('Price mismatch detected:', {
+                        urlPrice: price,
+                        dbPrice,
+                        urlCurrency: currency,
+                        dbCurrency
+                    });
+                    setPriceValidationError('El precio del servicio no coincide. Mostrando precio correcto.');
+                }
+
+                // Always use database price
+                setValidatedPrice(dbPrice);
+                setValidatedCurrency(dbCurrency);
+            } catch (error) {
+                console.error('Error validating price:', error);
+                setPriceValidationError('Error al validar el precio');
+            }
+        };
+
+        validatePrice();
+    }, [serviceId, price, currency]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -128,7 +191,7 @@ function CheckoutContent() {
                 const data = await res.json();
                 const list = Array.isArray(data?.data) ? data.data : [];
                 setPseBanks(list);
-            } catch {}
+            } catch { }
         };
         fetchBanks();
     }, []);
@@ -141,7 +204,7 @@ function CheckoutContent() {
                     const data = await res.json();
                     const list = Array.isArray(data?.data) ? data.data : [];
                     setPseBanks(list);
-                } catch {}
+                } catch { }
             }
         };
         refetchIfNeeded();
@@ -168,7 +231,36 @@ function CheckoutContent() {
                 return;
             }
 
-            // 2. Insert Booking (status pending)
+            // 2. SECURITY: Validate service price from database
+            const { data: serviceData, error: serviceError } = await supabase
+                .from('services')
+                .select('price, currency')
+                .eq('id', serviceId)
+                .single();
+
+            if (serviceError || !serviceData) {
+                showToast("Error al validar el servicio. Por favor intenta nuevamente.", 'error');
+                setIsProcessing(false);
+                return;
+            }
+
+            // Verify that the price from URL matches the database price
+            const dbPrice = Number(serviceData.price);
+            const dbCurrency = String(serviceData.currency);
+
+            if (Math.abs(dbPrice - price) > 0.01 || dbCurrency !== currency) {
+                console.error('Price manipulation detected:', {
+                    urlPrice: price,
+                    dbPrice,
+                    urlCurrency: currency,
+                    dbCurrency
+                });
+                showToast("Error: El precio del servicio no es válido. Por favor recarga la página.", 'error');
+                setIsProcessing(false);
+                return;
+            }
+
+            // 3. Insert Booking (status pending)
             // NOTE: NO creamos sala Daily.co aquí - se creará después del pago exitoso via webhook
             // Compute start_at UTC and tz metadata
             const userTz = userTimezonePref || (() => {
@@ -178,10 +270,10 @@ function CheckoutContent() {
             try {
                 const { data: expertRow } = await supabase.from('experts').select('timezone').eq('id', expertId).single();
                 expertTz = String(expertRow?.timezone || 'UTC');
-            } catch {}
+            } catch { }
             const [y, m, d] = date.split('-').map(n => Number(n));
-            const hh = Number(time.slice(0,2));
-            const mm = Number(time.slice(3,5));
+            const hh = Number(time.slice(0, 2));
+            const mm = Number(time.slice(3, 5));
             const startAtUTC = buildLocalDate(y, m, d, hh, mm, expertTz);
 
             // Establecer expiración para booking pending (1 hora desde ahora)
@@ -199,7 +291,7 @@ function CheckoutContent() {
                     expert_timezone: expertTz,
                     user_timezone: userTz,
                     status: 'pending',
-                    price: price, // Store base price
+                    price: dbPrice, // Store validated price from database
                     currency: currency,
                     meeting_url: null, // Will be set after payment confirmation
                     expires_at: expiresAt // Booking expires in 1 hour if not paid
@@ -219,18 +311,18 @@ function CheckoutContent() {
             // NOTE: NO enviamos emails ni notificaciones aquí
             // Se enviarán automáticamente vía webhook cuando el pago sea confirmado (APPROVED)
 
-            const serviceFee = currency === 'COP' ? 2000 : 2;
+            const serviceFee = dbCurrency === 'COP' ? 2000 : 2;
             const addonsTotal = addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0);
-            const total = price + serviceFee + addonsTotal;
+            const total = dbPrice + serviceFee + addonsTotal;
 
             // Wompi solo acepta COP - validar o convertir
             const wompiCurrency = 'COP';
             let totalInCOP = total;
 
-            if (currency !== 'COP') {
+            if (dbCurrency !== 'COP') {
                 // Obtener tasa de cambio actual
                 try {
-                    const rateRes = await fetch(`/api/payments/exchange-rate?from=${currency}`);
+                    const rateRes = await fetch(`/api/payments/exchange-rate?from=${dbCurrency}`);
                     if (!rateRes.ok) {
                         throw new Error('Error obteniendo tasa de cambio');
                     }
@@ -239,19 +331,19 @@ function CheckoutContent() {
                     const rate = rateData.rate;
 
                     if (!rate || rate <= 0) {
-                        throw new Error(`Tasa de cambio inválida para ${currency}`);
+                        throw new Error(`Tasa de cambio inválida para ${dbCurrency}`);
                     }
 
                     totalInCOP = Math.round(total * rate);
 
                     // Informar al usuario de la conversión con toast
                     const conversionMessage = rateData.source === 'live'
-                        ? `Monto convertido: ${formatAmount(currency, total)} → ${formatAmount('COP', totalInCOP)}`
-                        : `Monto convertido (ref.): ${formatAmount(currency, total)} → ${formatAmount('COP', totalInCOP)}`;
+                        ? `Monto convertido: ${formatAmount(dbCurrency, total)} → ${formatAmount('COP', totalInCOP)}`
+                        : `Monto convertido (ref.): ${formatAmount(dbCurrency, total)} → ${formatAmount('COP', totalInCOP)}`;
 
                     showToast(conversionMessage, 'info');
                 } catch (err) {
-                    showToast(`Error obteniendo tasa de cambio para ${currency}. Por favor intenta nuevamente.`, 'error');
+                    showToast(`Error obteniendo tasa de cambio para ${dbCurrency}. Por favor intenta nuevamente.`, 'error');
                     setIsProcessing(false);
                     return;
                 }
@@ -303,8 +395,8 @@ function CheckoutContent() {
                     customer_email: formData.email,
                     payment_method_type: paymentMethod,
                     payment_method_payload,
-                    original_amount: currency !== 'COP' ? total : undefined,
-                    original_currency: currency !== 'COP' ? currency : undefined,
+                    original_amount: dbCurrency !== 'COP' ? total : undefined,
+                    original_currency: dbCurrency !== 'COP' ? dbCurrency : undefined,
                     redirect_url: returnUrl
                 })
             });
@@ -313,7 +405,7 @@ function CheckoutContent() {
                 try {
                     const err = await createRes.json()
                     msg = err?.error || msg
-                } catch {}
+                } catch { }
                 throw new Error(msg);
             }
             const { transaction } = await createRes.json();
@@ -337,7 +429,7 @@ function CheckoutContent() {
                 if (prof?.full_name) {
                     expertLabel = prof.full_name;
                 }
-            } catch {}
+            } catch { }
 
             const successParams = new URLSearchParams({
                 id: 'RES-' + Date.now().toString().slice(-6),
@@ -363,6 +455,8 @@ function CheckoutContent() {
             </Link>
 
             <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>Finalizar Reserva</h1>
+
+            {/* Removed security warning banner per request; validation remains silent */}
 
             <div className="checkout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem' }}>
                 <style>{`
@@ -465,7 +559,10 @@ function CheckoutContent() {
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1.5rem' }}>Resumen de Reserva</h3>
 
                         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-                            <img src={image} alt="Service" style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover' }} />
+                            {(() => {
+                                const imageSrc = (image && image.trim()) ? image : 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1200&q=80';
+                                return <img src={imageSrc} alt={serviceTitle} style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover' }} />
+                            })()}
                             <div>
                                 <div style={{ fontWeight: 600, lineHeight: '1.3', marginBottom: '0.25rem', fontSize: '0.95rem' }}>{serviceTitle}</div>
                                 <div style={{ fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>con {expertName}</div>
@@ -593,26 +690,26 @@ function CheckoutContent() {
                             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgb(var(--border))' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                                     <span style={{ color: 'rgb(var(--text-secondary))' }}>Subtotal</span>
-                                    <span>{formatAmount(currency, price)}</span>
+                                    <span>{formatAmount(displayCurrency, displayPrice)}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                                     <span style={{ color: 'rgb(var(--text-secondary))' }}>Tarifa de Servicio</span>
-                                    <span>{formatAmount(currency, currency === 'COP' ? 2000 : 2)}</span>
+                                    <span>{formatAmount(displayCurrency, displayCurrency === 'COP' ? 2000 : 2)}</span>
                                 </div>
                                 {selectedAddons.length > 0 && addons.filter(a => selectedAddons.includes(a.id)).map(a => (
                                     <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                                         <span style={{ color: 'rgb(var(--text-secondary))' }}>{a.name}</span>
-                                        <span>{formatAmount(currency, a.price)}</span>
+                                        <span>{formatAmount(displayCurrency, a.price)}</span>
                                     </div>
                                 ))}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', fontWeight: 700, fontSize: '1.1rem' }}>
                                     <span>Total</span>
-                                    <span>{formatAmount(currency, price + (currency === 'COP' ? 2000 : 2) + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0))}</span>
+                                    <span>{formatAmount(displayCurrency, displayPrice + (displayCurrency === 'COP' ? 2000 : 2) + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0))}</span>
                                 </div>
                             </div>
 
                             <Button fullWidth size="lg" disabled={isProcessing} type="submit" style={{ marginTop: '0.5rem' }}>
-                                {isProcessing ? 'Procesando...' : `Pagar ${formatAmount(currency, price + (currency === 'COP' ? 2000 : 2) + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0))}`}
+                                {isProcessing ? 'Procesando...' : `Pagar ${formatAmount(displayCurrency, displayPrice + (displayCurrency === 'COP' ? 2000 : 2) + addons.filter(a => selectedAddons.includes(a.id)).reduce((sum, a) => sum + a.price, 0))}`}
                             </Button>
 
                             <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'rgb(var(--text-muted))', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
@@ -642,12 +739,11 @@ function CheckoutContent() {
                             style={{
                                 background: 'rgb(var(--surface))',
                                 border: '1px solid rgb(var(--border))',
-                                borderLeft: `4px solid ${
-                                    toast.type === 'success' ? 'rgb(var(--success))' :
+                                borderLeft: `4px solid ${toast.type === 'success' ? 'rgb(var(--success))' :
                                     toast.type === 'error' ? 'rgb(var(--error))' :
-                                    toast.type === 'warning' ? 'rgb(var(--warning))' :
-                                    'rgb(var(--primary))'
-                                }`,
+                                        toast.type === 'warning' ? 'rgb(var(--warning))' :
+                                            'rgb(var(--primary))'
+                                    }`,
                                 boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
                                 borderRadius: '8px',
                                 padding: '0.875rem 1rem',

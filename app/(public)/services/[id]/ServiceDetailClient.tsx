@@ -97,18 +97,20 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
             return `${y}-${m}-${d}`;
         })();
 
-        const params = new URLSearchParams();
-        params.set('title', service.title || '');
-        params.set('expert', expert.name || expert.full_name || 'Experto');
-        params.set('price', String(service.price ?? ''));
-        params.set('date', formattedDate);
-        params.set('time', selectedTime);
-        params.set('currency', service.currency || 'USD');
-        params.set('image', service.image_url || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1200&q=80');
-        params.set('serviceId', String(service.id));
-        params.set('expertId', String(service.expert_id ?? ''));
+        try {
+            const intent = {
+                title: service.title || '',
+                currency: service.currency || 'USD',
+                image: service.image_url || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1200&q=80',
+                serviceId: String(service.id),
+                expertId: String(service.expert_id || ''),
+                date: formattedDate,
+                time: selectedTime
+            };
+            sessionStorage.setItem('checkout_intent', JSON.stringify(intent));
+        } catch {}
 
-        router.push(`/checkout?${params.toString()}`);
+        router.push('/checkout');
     };
 
     const handleDateSelect = (dateStr: string, time: string) => {
