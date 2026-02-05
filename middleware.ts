@@ -1,6 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const PROTECTED_ROUTES = ['/user', '/expert', '/admin']
+const AUTH_ROUTES = ['/login', '/register', '/forgot-password']
+
 export async function updateSession(request: NextRequest) {
     let supabaseResponse = NextResponse.next({
         request,
@@ -15,7 +18,7 @@ export async function updateSession(request: NextRequest) {
                     return request.cookies.getAll()
                 },
                 setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value, options }) =>
+                    cookiesToSet.forEach(({ name, value }) =>
                         request.cookies.set(name, value)
                     )
                     supabaseResponse = NextResponse.next({
@@ -39,8 +42,32 @@ export async function updateSession(request: NextRequest) {
         return supabaseResponse
     }
 
-    // Refresh auth token
-    await supabase.auth.getUser()
+    // Refresh auth token and get user
+    const { data: { user } } = await supabase.auth.getUser()
+
+    const pathname = request.nextUrl.pathname
+
+    // Redirect unauthenticated users away from protected routes
+    const isProtectedRoute = PROTECTED_ROUTES.some(route => pathname.startsWith(route))
+    if (isProtectedRoute && !user) {
+        const redirectUrl = new URL('/login', request.url)
+        redirectUrl.searchParams.set('redirect', pathname)
+        return NextResponse.redirect(redirectUrl)
+    }
+
+    // Redirect authenticated users away from auth pages (login, register)
+    if (user && AUTH_ROUTES.some(route => pathname.startsWith(route))) {
+        // Fetch role to redirect to correct dashboard
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single()
+
+        const role = profile?.role || 'client'
+        const dashboardUrl = role === 'admin' ? '/admin' : role === 'expert' ? '/expert' : '/user'
+        return NextResponse.redirect(new URL(dashboardUrl, request.url))
+    }
 
     return supabaseResponse
 }
@@ -51,13 +78,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
     matcher: [
-        /*
-         * Match all request paths except for the ones starting with:
-         * - _next/static (static files)
-         * - _next/image (image optimization files)
-         * - favicon.ico (favicon file)
-         * Feel free to modify this pattern to include more paths.
-         */
         '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
 }

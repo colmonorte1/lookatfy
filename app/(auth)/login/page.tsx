@@ -4,28 +4,18 @@ import { Input } from '@/components/ui/Input/Input';
 import { Button } from '@/components/ui/Button/Button';
 import Link from 'next/link';
 import { Mail, Lock } from 'lucide-react';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
-export default function LoginPage() {
+function LoginForm() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
-
-    const scorePassword = (p: string) => {
-        let s = 0;
-        if (p.length >= 8) s++;
-        if (/[A-Z]/.test(p)) s++;
-        if (/[0-9]/.test(p)) s++;
-        if (/[^A-Za-z0-9]/.test(p)) s++;
-        return s;
-    };
-    const strength = scorePassword(password);
-    const strengthLabel = strength <= 1 ? 'Débil' : strength === 2 ? 'Media' : strength === 3 ? 'Buena' : 'Alta';
-    const strengthColor = strength <= 1 ? 'rgb(var(--error))' : strength === 2 ? 'rgb(var(--warning))' : strength === 3 ? 'rgb(var(--primary))' : 'rgb(var(--success))';
+    const searchParams = useSearchParams();
+    const redirectTo = searchParams.get('redirect');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -48,29 +38,15 @@ export default function LoginPage() {
                 return;
             }
 
-            // Check session
             const { data: { user } } = await supabase.auth.getUser();
 
             if (user) {
-                // Fetch role from profiles table (Source of Truth)
-                const { data: profile, error: profileError } = await supabase
+                const { data: profile } = await supabase
                     .from('profiles')
-                    .select('role, email, full_name, status, deleted_at')
+                    .select('role, status, deleted_at')
                     .eq('id', user.id)
                     .single();
 
-                // Debug logging (only in development)
-                if (process.env.NODE_ENV === 'development') {
-                    console.log('🔐 Login Debug Info:');
-                    console.log('User ID:', user.id);
-                    console.log('Email:', user.email);
-                    console.log('Profile Data:', profile);
-                    console.log('Profile Error:', profileError);
-                    console.log('Role from profile:', profile?.role);
-                    console.log('Role from metadata:', user.user_metadata?.role);
-                }
-
-                // Check if user is suspended or deleted
                 if (profile?.status === 'suspended') {
                     await supabase.auth.signOut();
                     setError('Tu cuenta ha sido suspendida. Contacta al administrador para más información.');
@@ -83,22 +59,18 @@ export default function LoginPage() {
                     return;
                 }
 
-                const role = profile?.role || user.user_metadata?.role || 'client';
-
-                console.log('🎯 Redirecting user with role:', role);
-
-                if (role === 'expert') {
-                    console.log('→ Redirecting to /expert');
-                    router.push('/expert');
-                } else if (role === 'admin') {
-                    console.log('→ Redirecting to /admin');
-                    router.push('/admin');
+                if (redirectTo) {
+                    router.push(redirectTo);
                 } else {
-                    console.log('→ Redirecting to /user');
-                    router.push('/user');
+                    const role = profile?.role || 'client';
+                    if (role === 'expert') {
+                        router.push('/expert');
+                    } else if (role === 'admin') {
+                        router.push('/admin');
+                    } else {
+                        router.push('/user');
+                    }
                 }
-
-                router.refresh();
             }
 
         } catch (err: unknown) {
@@ -154,12 +126,6 @@ export default function LoginPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                     />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <div style={{ height: '8px', background: 'rgb(var(--border))', borderRadius: '999px', width: '120px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${(strength/4)*100}%`, background: strengthColor }} />
-                        </div>
-                        <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>Fortaleza: {strengthLabel}</span>
-                    </div>
                     <div style={{ textAlign: 'right' }}>
                         <Link
                             href="/forgot-password"
@@ -186,5 +152,13 @@ export default function LoginPage() {
                 </Link>
             </p>
         </>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense>
+            <LoginForm />
+        </Suspense>
     );
 }

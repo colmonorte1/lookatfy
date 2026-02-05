@@ -2,6 +2,8 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { sendEmail } from '@/lib/email/brevo';
+import { disputeOpenedTemplate, disputeResolvedTemplate } from '@/lib/email/templates';
 
 // --- User/Expert Actions ---
 
@@ -78,6 +80,17 @@ export async function createDispute(data: {
             status: 'unread',
             created_by: user.id,
         });
+        // Send email to admins
+        const { data: admins } = await writeClient.from('profiles').select('email, full_name').eq('role', 'admin');
+        if (admins) {
+            const bookingDate = `${booking.date} ${booking.time || ''}`.trim();
+            for (const admin of admins) {
+                if (admin.email) {
+                    const html = disputeOpenedTemplate({ recipientName: admin.full_name || 'Admin', bookingDate, reason: data.reason, role: 'admin' });
+                    await sendEmail({ to: admin.email, subject: 'Nueva disputa abierta', html }).catch(() => {});
+                }
+            }
+        }
     } catch {}
 
     revalidatePath('/user/bookings');
@@ -275,6 +288,17 @@ export async function resolveDispute(
                         created_by: user?.id || null,
                     }
                 ]);
+                // Send dispute resolved emails
+                const { data: userProfile } = await adminClient.from('profiles').select('email, full_name').eq('id', booking.user_id).single();
+                const { data: expertProfile } = await adminClient.from('profiles').select('email, full_name').eq('id', booking.expert_id).single();
+                if (userProfile?.email) {
+                    const html = disputeResolvedTemplate({ recipientName: userProfile.full_name || 'Usuario', resolution: resolution.status, resolutionNotes: resolution.resolution_notes, role: 'user' });
+                    await sendEmail({ to: userProfile.email, subject: 'Tu disputa ha sido resuelta', html }).catch(() => {});
+                }
+                if (expertProfile?.email) {
+                    const html = disputeResolvedTemplate({ recipientName: expertProfile.full_name || 'Experto', resolution: resolution.status, resolutionNotes: resolution.resolution_notes, role: 'expert' });
+                    await sendEmail({ to: expertProfile.email, subject: 'Disputa resuelta', html }).catch(() => {});
+                }
             }
         }
     } catch {}

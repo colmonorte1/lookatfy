@@ -3,7 +3,13 @@
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { sendEmail, emailTemplates } from '@/lib/email';
+import { sendEmail } from '@/lib/email/brevo';
+import {
+    welcomeAdminCreatedTemplate,
+    accountSuspendedTemplate,
+    accountReactivatedTemplate,
+    accountUpdatedTemplate,
+} from '@/lib/email/templates';
 
 /**
  * Deletes a recording by ID (admin only)
@@ -143,17 +149,12 @@ export async function createUser(formData: FormData): Promise<{ success: boolean
         console.error('Error updating profile:', updateError);
     }
 
-    // Send welcome email with credentials
+    // Send welcome email with credentials via Brevo
     try {
-        const template = emailTemplates.welcome(fullName, email, tempPassword);
-        await sendEmail({
-            to: email,
-            subject: template.subject,
-            html: template.html
-        });
+        const html = welcomeAdminCreatedTemplate({ userName: fullName, email, tempPassword });
+        await sendEmail({ to: email, subject: 'Bienvenido a Lookatfy', html });
     } catch (emailError) {
         console.error('Error sending welcome email:', emailError);
-        // Don't fail the user creation if email fails
     }
 
     // Revalidate the users list page
@@ -252,17 +253,12 @@ export async function updateUser(userId: string, formData: FormData): Promise<{ 
         return { success: false, error: 'Error al actualizar el usuario' };
     }
 
-    // Send update notification email
+    // Send update notification email via Brevo
     try {
-        const template = emailTemplates.updated(fullName);
-        await sendEmail({
-            to: email,
-            subject: template.subject,
-            html: template.html
-        });
+        const html = accountUpdatedTemplate({ userName: fullName });
+        await sendEmail({ to: email, subject: 'Tu cuenta ha sido actualizada', html });
     } catch (emailError) {
         console.error('Error sending update email:', emailError);
-        // Don't fail the update if email fails
     }
 
     // Revalidate pages
@@ -424,21 +420,17 @@ export async function toggleUserStatus(userId: string, suspend: boolean): Promis
         return { success: false, error: 'Error al cambiar el estado del usuario' };
     }
 
-    // Send notification email
+    // Send notification email via Brevo
     if (targetUser?.email) {
         try {
-            const template = suspend
-                ? emailTemplates.suspended(targetUser.full_name || targetUser.email)
-                : emailTemplates.reactivated(targetUser.full_name || targetUser.email);
-
-            await sendEmail({
-                to: targetUser.email,
-                subject: template.subject,
-                html: template.html
-            });
+            const userName = targetUser.full_name || targetUser.email;
+            const html = suspend
+                ? accountSuspendedTemplate({ userName })
+                : accountReactivatedTemplate({ userName });
+            const subject = suspend ? 'Tu cuenta ha sido suspendida' : 'Tu cuenta ha sido reactivada';
+            await sendEmail({ to: targetUser.email, subject, html });
         } catch (emailError) {
             console.error('Error sending status change email:', emailError);
-            // Don't fail the status change if email fails
         }
     }
 
@@ -637,15 +629,12 @@ export async function bulkUserAction(
             for (const targetUser of targetUsers) {
                 if (targetUser.email) {
                     try {
-                        const template = action === 'suspend'
-                            ? emailTemplates.suspended(targetUser.full_name || targetUser.email)
-                            : emailTemplates.reactivated(targetUser.full_name || targetUser.email);
-
-                        await sendEmail({
-                            to: targetUser.email,
-                            subject: template.subject,
-                            html: template.html
-                        });
+                        const userName = targetUser.full_name || targetUser.email;
+                        const html = action === 'suspend'
+                            ? accountSuspendedTemplate({ userName })
+                            : accountReactivatedTemplate({ userName });
+                        const subject = action === 'suspend' ? 'Tu cuenta ha sido suspendida' : 'Tu cuenta ha sido reactivada';
+                        await sendEmail({ to: targetUser.email, subject, html });
                     } catch (emailError) {
                         console.error(`Error sending email to ${targetUser.email}:`, emailError);
                         // Continue even if email fails

@@ -2,6 +2,8 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { sendEmail } from '@/lib/email/brevo';
+import { expertVerifiedTemplate, expertUnverifiedTemplate } from '@/lib/email/templates';
 
 export async function toggleExpertVerification(expertId: string, currentStatus: boolean): Promise<{ success: boolean; error?: string }> {
     const supabase = await createClient();
@@ -43,6 +45,14 @@ export async function toggleExpertVerification(expertId: string, currentStatus: 
             status: 'unread',
             created_by: user.id,
           });
+        // Send email
+        const { data: expertProfile } = await writeClient.from('profiles').select('email, full_name').eq('id', expertId).single();
+        if (expertProfile?.email) {
+            const html = !currentStatus
+                ? expertVerifiedTemplate({ expertName: expertProfile.full_name || 'Experto' })
+                : expertUnverifiedTemplate({ expertName: expertProfile.full_name || 'Experto' });
+            await sendEmail({ to: expertProfile.email, subject: !currentStatus ? 'Verificación aprobada' : 'Verificación desactivada', html }).catch(() => {});
+        }
     } catch {}
 
     revalidatePath('/admin/experts');
