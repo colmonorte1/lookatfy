@@ -11,7 +11,7 @@ const COLORS = {
   white: '#ffffff',
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
 function button(label: string, href: string, variant: 'primary' | 'secondary' = 'primary') {
   const bg = variant === 'primary' ? COLORS.primary : COLORS.secondary
