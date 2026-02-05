@@ -6,48 +6,46 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
     const { id } = await params;
     const supabase = await createClient();
 
-    // Fetch Service + Expert Profile
-    // We join 'experts' (which has minimal data) -> 'profiles' (which has full name, avatar) is usually the link.
-    // My schema: services(expert_id) -> experts(id) -> profiles(id)
-    // Wait, let's check schema again. `experts` PK is `id`, which FKs to `profiles.id`. 
-    // `services.expert_id` refs `experts.id`.
-    // So we need to join: services -> expert:experts!expert_id(*)
-    // And ideally experts -> profiles(*)
-
-    // Supabase query to deep join: 
-    // select('*, expert:experts(*, profile:profiles(*))')
-
-    const { data: service, error } = await supabase
+    // 1. Fetch Service (no JOINs to avoid RLS issues)
+    const { data: serviceRaw, error } = await supabase
         .from('services')
-        .select(`
-            *,
-            expert:experts (
-                *,
-                languages,
-                skills,
-                profile:profiles (
-                    full_name,
-                    avatar_url
-                )
-            )
-        `)
+        .select('*')
         .eq('id', id)
         .single();
 
-    if (error || !service) {
+    if (error || !serviceRaw) {
         console.error("Error fetching service or not found:", error);
-        // If real ID not found, maybe show a generic error or 404. 
-        // For development/demo, if we don't have real data matching the ID in URL (which might be from old links), allow a graceful fail or 404.
-        // If this is a numeric ID 1, 2, 3.. it might fail if UUIDs are used. 
-        // My services schema uses UUID? Or Serial?
-        // Let's assume standard UUID if newly created, but if I seeded data manually it might be different. 
-        // The mock used '1', '2'. 
-        // Since I just created services, they likely have UUIDs.
-        // If I visit /services/1 it will fail.
-        // I should probably handle this. 
-
         notFound();
     }
+
+    // 2. Fetch Expert separately (expert.id = profile.id in this schema)
+    const { data: expertData } = serviceRaw.expert_id
+        ? await supabase
+            .from('experts')
+            .select('*')
+            .eq('id', serviceRaw.expert_id)
+            .single()
+        : { data: null };
+
+    // 3. Fetch Profile (expert.id = profile.id)
+    const { data: profileData } = expertData
+        ? await supabase
+            .from('profiles')
+            .select('full_name, avatar_url')
+            .eq('id', expertData.id)
+            .single()
+        : { data: null };
+
+    // 4. Build service with expert data
+    const service = {
+        ...serviceRaw,
+        expert: expertData ? {
+            ...expertData,
+            languages: Array.isArray(expertData.languages) ? expertData.languages : [],
+            skills: Array.isArray(expertData.skills) ? expertData.skills : [],
+            profile: profileData || null
+        } : null
+    };
 
     // Transform data to flat structure expected by Client Component if needed, or pass as is.
     // The client component expects `expert` object with name, avatar etc.
@@ -75,32 +73,58 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
     };
     let reviews: ReviewRow[] = [];
     if (bookingIds.length > 0) {
-        try {
-            const { data: reviewsData } = await supabase
-                .from('reviews')
-                .select(`
-                    *,
-                    reviewer:profiles!reviewer_id ( full_name, avatar_url ),
-                    subject:profiles!subject_id!inner ( role )
-                `)
-                .in('booking_id', bookingIds)
-                .eq('subject.role', 'expert')
-                .order('created_at', { ascending: false })
-                .limit(5);
-            reviews = (reviewsData || []) as ReviewRow[];
-        } catch {
-            const { data: reviewsAll } = await supabase
-                .from('reviews')
-                .select(`
-                    *,
-                    reviewer:profiles!reviewer_id ( full_name, avatar_url ),
-                    subject:profiles!subject_id ( role )
-                `)
-                .in('booking_id', bookingIds)
-                .order('created_at', { ascending: false })
-                .limit(10);
-            reviews = (((reviewsAll || []) as ReviewRow[]).filter((r) => r.subject?.role === 'expert')).slice(0, 5);
+        // Fetch reviews without JOINs
+        const { data: reviewsRaw } = await supabase
+            .from('reviews')
+            .select('id, rating, comment, created_at, reviewer_id, subject_id, booking_id')
+            .in('booking_id', bookingIds)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+        const reviewsData = reviewsRaw || [];
+
+        // Get unique reviewer_ids and subject_ids
+        const reviewerIds = [...new Set(reviewsData.map((r: any) => r.reviewer_id).filter(Boolean))];
+        const subjectIds = [...new Set(reviewsData.map((r: any) => r.subject_id).filter(Boolean))];
+
+        // Fetch profiles for reviewers
+        let reviewersMap: Record<string, { full_name?: string; avatar_url?: string }> = {};
+        if (reviewerIds.length > 0) {
+            const { data: reviewerProfiles } = await supabase
+                .from('profiles')
+                .select('id, full_name, avatar_url')
+                .in('id', reviewerIds);
+
+            (reviewerProfiles || []).forEach((p: any) => {
+                reviewersMap[p.id] = { full_name: p.full_name, avatar_url: p.avatar_url };
+            });
         }
+
+        // Fetch profiles for subjects (to check role)
+        let subjectsMap: Record<string, { role?: string }> = {};
+        if (subjectIds.length > 0) {
+            const { data: subjectProfiles } = await supabase
+                .from('profiles')
+                .select('id, role')
+                .in('id', subjectIds);
+
+            (subjectProfiles || []).forEach((p: any) => {
+                subjectsMap[p.id] = { role: p.role };
+            });
+        }
+
+        // Build reviews with merged data, filter by expert role
+        reviews = reviewsData
+            .filter((r: any) => subjectsMap[r.subject_id]?.role === 'expert')
+            .slice(0, 5)
+            .map((r: any) => ({
+                id: r.id,
+                rating: r.rating,
+                comment: r.comment,
+                created_at: r.created_at,
+                reviewer: reviewersMap[r.reviewer_id] || null,
+                subject: subjectsMap[r.subject_id] || null
+            }));
     }
 
     // Safety check if expert link is broken (though RLS/FK should prevent this)
@@ -118,7 +142,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
         expertAvg = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length) : 5.0;
     } catch {}
 
-    const expertData = service.expert ? {
+    const expertDataForClient = service.expert ? {
         ...service.expert,
         full_name: service.expert.profile?.full_name,
         avatar_url: service.expert.profile?.avatar_url,
@@ -130,5 +154,5 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
         timezone: (service.expert as any).timezone || null
     } : {};
 
-    return <ServiceDetailClient service={service} expert={expertData} reviews={reviews} />;
+    return <ServiceDetailClient service={service} expert={expertDataForClient} reviews={reviews} />;
 }

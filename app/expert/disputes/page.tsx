@@ -28,6 +28,8 @@ export default function ExpertDisputesPage() {
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [tab, setTab] = useState<TabKey>('all');
     const [page, setPage] = useState(1);
+    const [counts, setCounts] = useState<Record<TabKey, number>>({ all: 0, open: 0, under_review: 0, resolved_refunded: 0, resolved_dismissed: 0 });
+    const [stats, setStats] = useState({ totalAmount: 0, refundedAmount: 0, winRate: 0 });
     const pageSize = 10;
     const keys: TabKey[] = ['all','open','under_review','resolved_refunded','resolved_dismissed'];
 
@@ -135,50 +137,50 @@ export default function ExpertDisputesPage() {
     };
 
     useEffect(() => {
-        const fetchDisputes = async () => {
-            const supabase = createClient();
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-
-            // We need to find disputes linked to bookings where I am the expert.
-            // But 'disputes' only has created_by. We need to join with bookings.
-            // AND the booking must have expert_id = my_id.
-
-            // Supabase filter on foreign table relationship:
-            // .eq('booking.expert_id', user.id) -> this syntax depends on postgrest version.
-            // Typical way: 
-            // .select('*, booking!inner(expert_id)') .eq('booking.expert_id', user.id)
-
-            const { data, error } = await supabase
-                .from('disputes')
-                .select(`
-                    *,
-                    booking:bookings!inner (
-                        id, date, time, expert_id,
-                        user:profiles!user_id(full_name)
-                    )
-                `)
-                .eq('booking.expert_id', user.id)
-                .order('created_at', { ascending: false });
-
-            if (error) {
-                setErrorMsg(error.message || 'Error cargando disputas');
-            } else if (data) {
-                setDisputes(data);
-            }
-            setLoading(false);
-        };
-
-        fetchDisputes();
-    }, []);
-
-    useEffect(() => {
         const run = async () => {
             setLoading(true);
             setErrorMsg(null);
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) { setLoading(false); return; }
+
+            // Fetch all disputes for counts and stats (only on tab change or initial load)
+            if (page === 1) {
+                const { data: allData } = await supabase
+                    .from('disputes')
+                    .select(`
+                        *,
+                        booking:bookings!inner (
+                            id, date, time, expert_id, price,
+                            user:profiles!user_id(full_name)
+                        )
+                    `)
+                    .eq('booking.expert_id', user.id);
+
+                if (allData) {
+                    const all = allData as Dispute[];
+                    // Calculate counts
+                    const newCounts = {
+                        all: all.length,
+                        open: all.filter(d => d.status === 'open').length,
+                        under_review: all.filter(d => d.status === 'under_review').length,
+                        resolved_refunded: all.filter(d => d.status === 'resolved_refunded').length,
+                        resolved_dismissed: all.filter(d => d.status === 'resolved_dismissed').length,
+                    };
+                    setCounts(newCounts);
+
+                    // Calculate stats
+                    const totalAmount = all.reduce((sum, d) => sum + (Number((d.booking as any)?.price) || 0), 0);
+                    const refundedAmount = all
+                        .filter(d => d.status === 'resolved_refunded')
+                        .reduce((sum, d) => sum + (Number((d.booking as any)?.price) || 0), 0);
+                    const resolvedTotal = newCounts.resolved_refunded + newCounts.resolved_dismissed;
+                    const winRate = resolvedTotal > 0 ? (newCounts.resolved_dismissed / resolvedTotal) * 100 : 0;
+                    setStats({ totalAmount, refundedAmount, winRate });
+                }
+            }
+
+            // Fetch paginated disputes for current tab
             const start = (page - 1) * pageSize;
             const end = start + pageSize - 1;
             let query = supabase
@@ -186,7 +188,7 @@ export default function ExpertDisputesPage() {
                 .select(`
                     *,
                     booking:bookings!inner (
-                        id, date, time, expert_id,
+                        id, date, time, expert_id, price,
                         user:profiles!user_id(full_name)
                     )
                 `)
@@ -208,10 +210,10 @@ export default function ExpertDisputesPage() {
     const getStatusBadge = (status: Dispute['status']) => {
         const label = dict[lang].badges[status];
         switch (status) {
-            case 'open': return <span style={{ background: 'rgba(255, 193, 7, 0.12)', color: '#2b2b2b', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid rgba(255, 193, 7, 0.5)' }}>{label}</span>;
-            case 'under_review': return <span style={{ background: 'rgba(13, 110, 253, 0.12)', color: '#1f1f1f', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid rgba(13, 110, 253, 0.5)' }}>{label}</span>;
-            case 'resolved_refunded': return <span style={{ background: 'rgba(220, 53, 69, 0.12)', color: '#1f1f1f', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid rgba(220, 53, 69, 0.5)' }}>{label}</span>;
-            case 'resolved_dismissed': return <span style={{ background: 'rgba(25, 135, 84, 0.12)', color: '#1f1f1f', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid rgba(25, 135, 84, 0.5)' }}>{label}</span>;
+            case 'open': return <span style={{ background: 'rgba(var(--warning), 0.1)', color: 'rgb(var(--warning))', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid rgba(var(--warning), 0.3)', fontWeight: 600 }}>{label}</span>;
+            case 'under_review': return <span style={{ background: 'rgba(var(--primary), 0.1)', color: 'rgb(var(--primary))', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid rgba(var(--primary), 0.3)', fontWeight: 600 }}>{label}</span>;
+            case 'resolved_refunded': return <span style={{ background: 'rgba(var(--error), 0.1)', color: 'rgb(var(--error))', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid rgba(var(--error), 0.3)', fontWeight: 600 }}>{label}</span>;
+            case 'resolved_dismissed': return <span style={{ background: 'rgba(var(--success), 0.1)', color: 'rgb(var(--success))', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid rgba(var(--success), 0.3)', fontWeight: 600 }}>{label}</span>;
             default: return <span>{status}</span>;
         }
     };
@@ -222,7 +224,85 @@ export default function ExpertDisputesPage() {
                 <AlertCircle /> {dict[lang].title}
             </h1>
 
-            <div role="tablist" aria-label="Filtrar por estado" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+            {/* KPIs Section */}
+            {counts.all > 0 && (
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '1rem',
+                    marginBottom: '2rem'
+                }}>
+                    <div style={{
+                        background: 'rgb(var(--surface))',
+                        padding: '1.5rem',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid rgb(var(--border))'
+                    }}>
+                        <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))', fontWeight: 500 }}>
+                            Total Disputas
+                        </div>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0' }}>
+                            {counts.all}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'rgb(var(--text-muted))' }}>
+                            Activas: {counts.open + counts.under_review}
+                        </div>
+                    </div>
+
+                    <div style={{
+                        background: 'rgb(var(--surface))',
+                        padding: '1.5rem',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid rgb(var(--border))'
+                    }}>
+                        <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))', fontWeight: 500 }}>
+                            Tasa de Éxito
+                        </div>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: stats.winRate >= 50 ? 'rgb(var(--success))' : 'rgb(var(--error))' }}>
+                            {stats.winRate.toFixed(0)}%
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'rgb(var(--text-muted))' }}>
+                            Ganadas: {counts.resolved_dismissed} / Perdidas: {counts.resolved_refunded}
+                        </div>
+                    </div>
+
+                    <div style={{
+                        background: 'rgb(var(--surface))',
+                        padding: '1.5rem',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid rgb(var(--border))'
+                    }}>
+                        <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))', fontWeight: 500 }}>
+                            Monto Total en Disputa
+                        </div>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0' }}>
+                            ${stats.totalAmount.toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'rgb(var(--text-muted))' }}>
+                            Todas las disputas
+                        </div>
+                    </div>
+
+                    <div style={{
+                        background: 'rgb(var(--surface))',
+                        padding: '1.5rem',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid rgb(var(--border))'
+                    }}>
+                        <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))', fontWeight: 500 }}>
+                            Perdido por Reembolsos
+                        </div>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'rgb(var(--error))' }}>
+                            ${stats.refundedAmount.toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'rgb(var(--text-muted))' }}>
+                            {counts.resolved_refunded} disputas perdidas
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div role="tablist" aria-label="Filtrar por estado" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                 {keys.map(k => (
                     <button
                         key={k}
@@ -234,10 +314,11 @@ export default function ExpertDisputesPage() {
                             borderRadius: '8px',
                             border: '1px solid rgb(var(--border))',
                             background: tab === k ? 'rgba(var(--primary),0.08)' : 'rgb(var(--surface))',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            fontWeight: tab === k ? 600 : 400
                         }}
                     >
-                        {dict[lang].tabs[k]}
+                        {dict[lang].tabs[k]} ({counts[k]})
                     </button>
                 ))}
             </div>
@@ -251,57 +332,67 @@ export default function ExpertDisputesPage() {
                     <Button variant="outline" onClick={() => window.location.reload()} style={{ marginTop: '0.75rem' }}>{dict[lang].retry}</Button>
                 </div>
             ) : disputes.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '3rem', border: '1px dashed #ccc', borderRadius: '8px' }}>
-                    <p style={{ color: '#666' }}>{dict[lang].empty}</p>
+                <div style={{ textAlign: 'center', padding: '3rem', border: '1px dashed rgb(var(--border))', borderRadius: 'var(--radius-lg)', background: 'rgb(var(--surface))' }}>
+                    <p style={{ color: 'rgb(var(--text-secondary))' }}>{dict[lang].empty}</p>
                     <Link href="/expert/bookings"><Button variant="outline" style={{ marginTop: '1rem' }}>{dict[lang].backToBookings}</Button></Link>
                 </div>
             ) : (
                 <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     {disputes.map(dispute => (
                         <div key={dispute.id} style={{
-                            background: 'white', padding: '1.5rem', borderRadius: '8px',
-                            border: '1px solid #eee', boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                            background: 'rgb(var(--surface))', padding: '1.5rem', borderRadius: 'var(--radius-lg)',
+                            border: '1px solid rgb(var(--border))', boxShadow: 'var(--shadow-sm)'
                         }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                                <div>
-                                    <div style={{ fontSize: '0.85rem', color: '#666', marginBottom: '0.25rem' }}>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: '0.85rem', color: 'rgb(var(--text-secondary))', marginBottom: '0.25rem' }}>
                                         {new Date(dispute.created_at).toLocaleDateString()}
                                     </div>
-                                    <h3 style={{ fontSize: '1.1rem', fontWeight: '600' }}>{dispute.reason}</h3>
-                                    <p style={{ margin: 0, fontSize: '0.9rem', color: '#555' }}>
+                                    <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '0.25rem', color: 'rgb(var(--text-main))' }}>{dispute.reason}</h3>
+                                    <p style={{ margin: 0, fontSize: '0.9rem', color: 'rgb(var(--text-secondary))' }}>
                                         {dict[lang].client}: {dispute.booking?.user?.full_name}
                                     </p>
+                                    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'rgb(var(--text-main))' }}>
+                                            Monto: ${Number((dispute.booking as any)?.price || 0).toFixed(2)}
+                                        </span>
+                                        {dispute.booking?.id && (
+                                            <Link href={`/expert/bookings?highlight=${dispute.booking.id}`} style={{ fontSize: '0.85rem', color: 'rgb(var(--primary))', textDecoration: 'underline' }}>
+                                                Ver reserva
+                                            </Link>
+                                        )}
+                                    </div>
                                 </div>
                                 <div>
                                     {getStatusBadge(dispute.status)}
                                 </div>
                             </div>
 
-                            <div style={{ background: '#f9f9f9', padding: '1rem', borderRadius: '4px', fontSize: '0.95rem', color: '#333' }}>
+                            <div style={{ background: 'rgb(var(--background))', padding: '1rem', borderRadius: 'var(--radius-md)', fontSize: '0.95rem', color: 'rgb(var(--text-main))' }}>
                                 {`"${dispute.description}"`}
                             </div>
 
                             {dispute.resolution_notes && (
-                                <div style={{ marginTop: '1rem', borderTop: '1px solid #eee', paddingTop: '1rem' }}>
-                                    <strong style={{ fontSize: '0.9rem', display: 'block', marginBottom: '0.25rem' }}>Soporte:</strong>
-                                    <p style={{ margin: 0, fontSize: '0.9rem', color: '#555' }}>{dispute.resolution_notes}</p>
+                                <div style={{ marginTop: '1rem', borderTop: '1px solid rgb(var(--border))', paddingTop: '1rem' }}>
+                                    <strong style={{ fontSize: '0.9rem', display: 'block', marginBottom: '0.25rem', color: 'rgb(var(--text-main))' }}>Soporte:</strong>
+                                    <p style={{ margin: 0, fontSize: '0.9rem', color: 'rgb(var(--text-secondary))' }}>{dispute.resolution_notes}</p>
                                 </div>
                             )}
                             {dispute.user_response && (
-                                <div style={{ marginTop: '0.75rem', borderTop: '1px solid #eee', paddingTop: '0.75rem' }}>
-                                    <strong style={{ fontSize: '0.9rem' }}>Respuesta del usuario:</strong>
-                                    <p style={{ margin: '0.5rem 0 0', color: '#555' }}>{dispute.user_response}</p>
+                                <div style={{ marginTop: '0.75rem', borderTop: '1px solid rgb(var(--border))', paddingTop: '0.75rem' }}>
+                                    <strong style={{ fontSize: '0.9rem', color: 'rgb(var(--text-main))' }}>Respuesta del usuario:</strong>
+                                    <p style={{ margin: '0.5rem 0 0', color: 'rgb(var(--text-secondary))' }}>{dispute.user_response}</p>
                                 </div>
                             )}
                             {dispute.expert_response && (
                                 <div style={{ marginTop: '0.5rem' }}>
-                                    <strong style={{ fontSize: '0.9rem' }}>Tu respuesta:</strong>
-                                    <p style={{ margin: '0.5rem 0 0', color: '#555' }}>{dispute.expert_response}</p>
+                                    <strong style={{ fontSize: '0.9rem', color: 'rgb(var(--text-main))' }}>Tu respuesta:</strong>
+                                    <p style={{ margin: '0.5rem 0 0', color: 'rgb(var(--text-secondary))' }}>{dispute.expert_response}</p>
                                 </div>
                             )}
                             {(dispute.status === 'open' || dispute.status === 'under_review') && (
-                                <div style={{ marginTop: '1rem', borderTop: '1px solid #eee', paddingTop: '1rem', display: 'grid', gap: '0.75rem' }}>
-                                    <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Tu respuesta (visible para admin y usuario)</label>
+                                <div style={{ marginTop: '1rem', borderTop: '1px solid rgb(var(--border))', paddingTop: '1rem', display: 'grid', gap: '0.75rem' }}>
+                                    <label style={{ fontWeight: 600, fontSize: '0.9rem', color: 'rgb(var(--text-main))' }}>Tu respuesta (visible para admin y usuario)</label>
                                     <textarea
                                         value={responseById[dispute.id] || ''}
                                         onChange={(e) => setResponseById(prev => ({ ...prev, [dispute.id]: e.target.value }))}
@@ -336,11 +427,13 @@ export default function ExpertDisputesPage() {
                             )}
                         </div>
                     ))}
-                    <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
-                        <Button variant="secondary" onClick={() => setPage(p => p + 1)} disabled={loading}>
-                            {loading ? dict[lang].loading : 'Cargar más'}
-                        </Button>
-                    </div>
+                    {disputes.length >= pageSize && (
+                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+                            <Button variant="secondary" onClick={() => setPage(p => p + 1)} disabled={loading}>
+                                {loading ? dict[lang].loading : 'Cargar más'}
+                            </Button>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

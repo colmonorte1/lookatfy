@@ -2,59 +2,171 @@ import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { ArrowLeft, CreditCard, Calendar, Video, PlayCircle, CheckCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
+import DeleteRecordingButton from '../DeleteRecordingButton';
+import Alert from '@/components/ui/Alert/Alert';
+
+// TypeScript interfaces for type safety
+interface Recording {
+    id: string;
+    room_name?: string | null;
+    storage_url?: string | null;
+    type?: string | null;
+    created_at: string;
+    user_id: string;
+}
+
+interface ProcessedBooking {
+    id: string;
+    date?: string | null;
+    time?: string | null;
+    status: string;
+    price?: number | null;
+    currency?: string | null;
+    expert_id: string;
+    service_id: string;
+    service_title?: string | null;
+    expert_name?: string | null;
+}
 
 export default async function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     const supabase = await createClient();
 
-    // 1. Fetch Profile
-    const { data: profile, error: profileError } = await supabase
+    // Authentication and authorization check
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        redirect('/login?redirect=/admin/users/' + id);
+    }
+
+    // Check if user is admin
+    const { data: adminProfile, error: adminProfileError } = await supabase
         .from('profiles')
-        .select('*')
-        .eq('id', id)
+        .select('role')
+        .eq('id', user.id)
         .single();
+
+    if (adminProfileError || !adminProfile || adminProfile.role !== 'admin') {
+        redirect('/');
+    }
+
+    // Parallelized queries for better performance
+    const [
+        { data: profile, error: profileError },
+        { data: bookingsRaw, error: bookingsError },
+        { data: recordings, error: recordingsError }
+    ] = await Promise.all([
+        // 1. Fetch Profile
+        supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', id)
+            .single(),
+
+        // 2. Fetch Bookings (no JOINs to avoid RLS issues)
+        supabase
+            .from('bookings')
+            .select('id, date, time, status, price, currency, expert_id, service_id')
+            .eq('user_id', id)
+            .order('date', { ascending: false }),
+
+        // 3. Fetch Recordings
+        supabase
+            .from('recordings')
+            .select('*')
+            .eq('user_id', id)
+            .order('created_at', { ascending: false })
+    ]);
 
     if (profileError || !profile) {
         notFound();
     }
 
-    // 2. Fetch Bookings (Join with Expert->Profile and Service)
-    const { data: bookings } = await supabase
-        .from('bookings')
-        .select(`
-            *,
-            expert:experts!expert_id(
-                profile:profiles(full_name)
-            ),
-            service:services!service_id(title)
-        `)
-        .eq('user_id', id)
-        .order('date', { ascending: false });
+    if (bookingsError) {
+        console.error('Error fetching bookings:', bookingsError);
+    }
 
-    // 3. Calculate KPIs
+    if (recordingsError) {
+        console.error('Error fetching recordings:', recordingsError);
+    }
+
+    // Fetch related data separately to avoid RLS issues
+    const bookingsData = bookingsRaw || [];
+    const expertIds = [...new Set(bookingsData.map(b => b.expert_id).filter(Boolean))];
+    const serviceIds = [...new Set(bookingsData.map(b => b.service_id).filter(Boolean))];
+
+    // Fetch experts and their profiles
+    const { data: expertsData } = expertIds.length > 0
+        ? await supabase.from('experts').select('id, user_id').in('id', expertIds)
+        : { data: [] };
+
+    const expertUserIds = (expertsData || []).map((e: { user_id: string }) => e.user_id).filter(Boolean);
+    const { data: expertProfilesData } = expertUserIds.length > 0
+        ? await supabase.from('profiles').select('id, full_name').in('id', expertUserIds)
+        : { data: [] };
+
+    // Fetch services
+    const { data: servicesData } = serviceIds.length > 0
+        ? await supabase.from('services').select('id, title').in('id', serviceIds)
+        : { data: [] };
+
+    // Create lookup maps
+    const profilesMap = new Map((expertProfilesData || []).map((p: { id: string; full_name: string }) => [p.id, p.full_name]));
+    const expertsMap = new Map((expertsData || []).map((e: { id: string; user_id: string }) => [e.id, profilesMap.get(e.user_id)]));
+    const servicesMap = new Map((servicesData || []).map((s: { id: string; title: string }) => [s.id, s.title]));
+
+    // Process bookings with merged data
+    const bookings: ProcessedBooking[] = bookingsData.map((b) => ({
+        id: b.id,
+        date: b.date,
+        time: b.time,
+        status: b.status,
+        price: b.price,
+        currency: b.currency,
+        expert_id: b.expert_id,
+        service_id: b.service_id,
+        service_title: servicesMap.get(b.service_id) || null,
+        expert_name: expertsMap.get(b.expert_id) || null,
+    }));
+
+    // Calculate KPIs
     const userBookings = bookings || [];
-    const totalSpend = userBookings.reduce((sum, b) => {
+    const recordingsCount = (recordings || []).length;
+
+    // Multi-currency handling: detect primary currency
+    const currencyCounts = new Map<string, number>();
+    const spendByCurrency = new Map<string, number>();
+
+    userBookings.forEach(b => {
         if (b.status === 'completed' || b.status === 'confirmed') {
-            return sum + (Number(b.price) || 0);
+            const currency = b.currency || 'USD';
+            const price = Number(b.price) || 0;
+
+            currencyCounts.set(currency, (currencyCounts.get(currency) || 0) + 1);
+            spendByCurrency.set(currency, (spendByCurrency.get(currency) || 0) + price);
         }
-        return sum;
-    }, 0);
+    });
+
+    // Find primary currency (most used)
+    let primaryCurrency = 'USD';
+    let maxCount = 0;
+    currencyCounts.forEach((count, currency) => {
+        if (count > maxCount) {
+            maxCount = count;
+            primaryCurrency = currency;
+        }
+    });
+
+    const hasMultipleCurrencies = spendByCurrency.size > 1;
+    const totalSpend = spendByCurrency.get(primaryCurrency) || 0;
 
     const sessionsAttended = userBookings.filter(b => b.status === 'completed').length;
     const upcomingSessions = userBookings.filter(b => b.status === 'confirmed').length;
 
-    // Recordings
-    const { data: recordings } = await supabase
-        .from('recordings')
-        .select('*')
-        .eq('user_id', id)
-        .order('created_at', { ascending: false });
-    const recordingsCount = (recordings || []).length;
-
     // Helper for formatting currency
-    const formatMoney = (amount: number, currency = 'USD') => {
-        return new Intl.NumberFormat('en-US', {
+    const formatMoney = (amount: number, currency = primaryCurrency) => {
+        return new Intl.NumberFormat('es-CO', {
             style: 'currency',
             currency: currency,
             minimumFractionDigits: 2
@@ -106,10 +218,14 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
                             </div>
                         </div>
                     </div>
-                    {/* Actions currently disabled/placeholder */}
+                    {/* Actions */}
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <Button variant="outline" disabled>Enviar Mensaje</Button>
-                        <Button style={{ background: 'rgb(var(--text-main))', color: 'rgb(var(--surface))' }} disabled>Editar Usuario</Button>
+                        <Link href={`/admin/users/${id}/edit`}>
+                            <Button style={{ background: 'rgb(var(--text-main))', color: 'rgb(var(--surface))' }}>
+                                Editar Usuario
+                            </Button>
+                        </Link>
                     </div>
                 </div>
             </div>
@@ -121,7 +237,19 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
                         <span style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem' }}>Gasto Total</span>
                         <CreditCard size={18} color="rgb(var(--primary))" />
                     </div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatMoney(totalSpend)}</div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>
+                        {formatMoney(totalSpend)}
+                        {hasMultipleCurrencies && (
+                            <span style={{ fontSize: '0.75rem', marginLeft: '0.5rem', color: 'rgb(var(--warning))', fontWeight: 400 }}>
+                                ({spendByCurrency.size} divisas)
+                            </span>
+                        )}
+                    </div>
+                    {hasMultipleCurrencies && (
+                        <div style={{ fontSize: '0.75rem', color: 'rgb(var(--text-muted))', marginTop: '0.5rem' }}>
+                            Mostrando {primaryCurrency}
+                        </div>
+                    )}
                 </div>
                 <div style={{ background: 'rgb(var(--surface))', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.5rem' }}>
@@ -157,18 +285,25 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
                         </h3>
                     </div>
                     <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                        {userBookings.length === 0 ? (
+                        {bookingsError ? (
+                            <div style={{ padding: '1.5rem' }}>
+                                <Alert
+                                    type="error"
+                                    message="No se pudieron cargar las reservas"
+                                />
+                            </div>
+                        ) : userBookings.length === 0 ? (
                             <div style={{ padding: '2rem', textAlign: 'center', color: 'rgb(var(--text-secondary))' }}>
                                 No hay reservas registradas.
                             </div>
                         ) : (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                                 <tbody>
-                                    {userBookings.map((booking: { id: string; date?: string; time?: string; status: string; service?: { title?: string | null } | null; expert?: { profile?: { full_name?: string | null } | null } | null }) => (
+                                    {userBookings.map((booking: ProcessedBooking) => (
                                         <tr key={booking.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
                                             <td style={{ padding: '1rem' }}>
-                                                <div style={{ fontWeight: 600 }}>{booking.service?.title || 'Servicio Eliminado'}</div>
-                                                <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>con {booking.expert?.profile?.full_name || 'Experto'}</div>
+                                                <div style={{ fontWeight: 600 }}>{booking.service_title || 'Servicio Eliminado'}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>con {booking.expert_name || 'Experto'}</div>
                                             </td>
                                             <td style={{ padding: '1rem' }}>
                                                 <div style={{ fontSize: '0.9rem' }}>{booking.date}</div>
@@ -198,20 +333,27 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
                     </div>
                 </div>
 
-                {/* Recordings Section (Placeholder for now) */}
+                {/* Recordings Section */}
                 <div style={{ background: 'rgb(var(--surface))', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))', overflow: 'hidden' }}>
                     <div style={{ padding: '1.5rem', borderBottom: '1px solid rgb(var(--border))' }}>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <PlayCircle size={18} /> Mis grabaciones
                         </h3>
                     </div>
-                    {(!recordings || recordings.length === 0) ? (
+                    {recordingsError ? (
+                        <div style={{ padding: '1.5rem' }}>
+                            <Alert
+                                type="error"
+                                message="No se pudieron cargar las grabaciones"
+                            />
+                        </div>
+                    ) : (!recordings || recordings.length === 0) ? (
                         <div style={{ padding: '2rem', textAlign: 'center', color: 'rgb(var(--text-secondary))' }}>
                             No hay grabaciones disponibles por el momento.
                         </div>
                     ) : (
                         <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
-                            {recordings.map((r: any) => (
+                            {recordings.map((r: Recording) => (
                                 <div key={r.id} style={{ borderBottom: '1px solid rgb(var(--border))', paddingBottom: '1rem' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                                         <div>
@@ -234,24 +376,7 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
                                         </div>
                                     )}
                                     <div style={{ marginTop: '0.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-                                        {/* Delete action added below via server action */}
-                                        <form action={async () => {
-                                            'use server';
-                                            const supabase = await (await import('@/utils/supabase/server')).createClient();
-                                            const { data: { user } } = await supabase.auth.getUser();
-                                            if (!user) return;
-                                            const { data: profile } = await supabase
-                                                .from('profiles')
-                                                .select('role')
-                                                .eq('id', user.id)
-                                                .single();
-                                            if (profile?.role !== 'admin') return;
-                                            await supabase.from('recordings').delete().eq('id', r.id);
-                                            const { revalidatePath } = await import('next/cache');
-                                            revalidatePath(`/admin/users/${id}`);
-                                        }}>
-                                            <Button variant="outline">Eliminar</Button>
-                                        </form>
+                                        <DeleteRecordingButton recordingId={r.id} userId={id} />
                                     </div>
                                 </div>
                             ))}

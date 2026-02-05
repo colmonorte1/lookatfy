@@ -2,23 +2,47 @@ import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { ArrowLeft, Star, DollarSign, Calendar, Clock, Video, BookOpen, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
+import { redirect } from 'next/navigation';
+
+// TypeScript interfaces
+interface ProcessedBooking {
+    id: string;
+    date: string;
+    time?: string;
+    price: number;
+    status: string;
+    user_id: string;
+    service_id: string;
+    user_name?: string;
+    service_title?: string;
+}
 
 export default async function AdminExpertDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     const supabase = await createClient();
 
-    // 1. Fetch Expert Details (joined with profile)
-    // 1. Fetch Expert Details (joined with profile)
+    // Authentication and authorization check
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        redirect('/login?redirect=/admin/experts/' + id);
+    }
+
+    // Check if user is admin
+    const { data: adminProfile, error: adminProfileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+    if (adminProfileError || !adminProfile || adminProfile.role !== 'admin') {
+        redirect('/');
+    }
+
+    // 1. Fetch Expert Details (no JOINs to avoid PGRST201)
     const { data: expert, error: expertError } = await supabase
         .from('experts')
-        .select(`
-            *,
-            profiles (
-                full_name,
-                email,
-                avatar_url
-            )
-        `)
+        .select('*')
         .eq('id', id)
         .single();
 
@@ -34,29 +58,60 @@ export default async function AdminExpertDetailPage({ params }: { params: Promis
         );
     }
 
-    const { profiles: profile } = expert;
+    // 2. Fetch Profile separately (expert.id = profile.id in this schema)
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, email, avatar_url')
+        .eq('id', expert.id)
+        .single();
 
-    // 2. Fetch Services
+    // 3. Fetch Services
     const { data: services } = await supabase
         .from('services')
         .select('*')
         .eq('expert_id', id)
-        .eq('status', 'active'); // Show only active? or detailed list. Let's show active + non-deleted for admin maybe? Just actives for now as per UI.
+        .eq('status', 'active');
 
-    // 3. Fetch Bookings History
-    const { data: bookings } = await supabase
+    // 4. Fetch Bookings History (no JOINs)
+    const { data: bookingsRaw } = await supabase
         .from('bookings')
-        .select(`
-            *,
-            profiles!user_id ( full_name ),
-            services!service_id ( title )
-        `)
+        .select('id, date, time, price, status, user_id, service_id')
         .eq('expert_id', id)
         .order('date', { ascending: false })
-        .limit(10); // Last 10 sessions
+        .limit(10);
 
-    // 4. Calculate Stats
-    // Total Earnings (completed bookings) - We might need a separate query for ALL time earnings if we limit bookings above.
+    const bookingsData = bookingsRaw || [];
+
+    // Fetch related data for bookings
+    const userIds = [...new Set(bookingsData.map(b => b.user_id).filter(Boolean))];
+    const serviceIds = [...new Set(bookingsData.map(b => b.service_id).filter(Boolean))];
+
+    const { data: usersData } = userIds.length > 0
+        ? await supabase.from('profiles').select('id, full_name').in('id', userIds)
+        : { data: [] };
+
+    const { data: servicesData } = serviceIds.length > 0
+        ? await supabase.from('services').select('id, title').in('id', serviceIds)
+        : { data: [] };
+
+    // Create lookup maps
+    const usersMap = new Map((usersData || []).map((u: { id: string; full_name: string }) => [u.id, u.full_name]));
+    const servicesMap = new Map((servicesData || []).map((s: { id: string; title: string }) => [s.id, s.title]));
+
+    // Process bookings
+    const bookings: ProcessedBooking[] = bookingsData.map((b) => ({
+        id: b.id,
+        date: b.date,
+        time: b.time,
+        price: Number(b.price) || 0,
+        status: b.status,
+        user_id: b.user_id,
+        service_id: b.service_id,
+        user_name: usersMap.get(b.user_id) || undefined,
+        service_title: servicesMap.get(b.service_id) || undefined,
+    }));
+
+    // 5. Calculate Stats
     const { data: allMetrics } = await supabase
         .from('bookings')
         .select('price, status')
@@ -68,7 +123,6 @@ export default async function AdminExpertDetailPage({ params }: { params: Promis
 
     const totalSessions = allMetrics?.filter(b => b.status === 'completed').length || 0;
 
-    // Format Dates
     // Format Dates
     const joinedDate = new Date(expert.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -86,16 +140,16 @@ export default async function AdminExpertDetailPage({ params }: { params: Promis
                             background: 'rgb(var(--surface-hover))', display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '2rem', fontWeight: 700, overflow: 'hidden'
                         }}>
-                            {profile.avatar_url ? (
-                                <img src={profile.avatar_url} alt={profile.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            {profile?.avatar_url ? (
+                                <img src={profile.avatar_url} alt={profile.full_name || 'Experto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (
-                                profile.full_name?.charAt(0) || 'E'
+                                profile?.full_name?.charAt(0) || 'E'
                             )}
                         </div>
                         <div>
-                            <h1 style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>{profile.full_name}</h1>
+                            <h1 style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>{profile?.full_name || 'Sin nombre'}</h1>
                             <div style={{ display: 'flex', gap: '1rem', color: 'rgb(var(--text-secondary))' }}>
-                                <span>{profile.email}</span>
+                                <span>{profile?.email || 'Sin email'}</span>
                                 <span>•</span>
                                 <span>{expert.title || 'Sin título'}</span>
                             </div>
@@ -208,11 +262,11 @@ export default async function AdminExpertDetailPage({ params }: { params: Promis
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                             <tbody>
                                 {bookings && bookings.length > 0 ? (
-                                    bookings.map((session: any) => (
+                                    bookings.map((session: ProcessedBooking) => (
                                         <tr key={session.id} style={{ borderBottom: '1px solid rgb(var(--border))' }}>
                                             <td style={{ padding: '1rem' }}>
-                                                <div style={{ fontWeight: 600 }}>{session.profiles?.full_name || 'Usuario'}</div>
-                                                <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>{session.services?.title || 'Servicio'}</div>
+                                                <div style={{ fontWeight: 600 }}>{session.user_name || 'Usuario'}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>{session.service_title || 'Servicio'}</div>
                                             </td>
                                             <td style={{ padding: '1rem', textAlign: 'right' }}>
                                                 <div style={{ fontWeight: 600 }}>${session.price}</div>

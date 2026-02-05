@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, User, Calendar, Clock, Briefcase, LogOut, DollarSign, AlertCircle, Wallet, Landmark } from 'lucide-react';
 import styles from './ExpertSidebar.module.css';
@@ -22,6 +23,7 @@ const MENU_ITEMS = [
 export const ExpertSidebar = () => {
     const pathname = usePathname();
     const router = useRouter();
+    const [isOpen, setIsOpen] = useState(false);
 
     const handleLogout = async () => {
         const supabase = createClient();
@@ -30,8 +32,23 @@ export const ExpertSidebar = () => {
         router.refresh();
     };
 
+    // Listen to global toggle events from header
+    // and close on route change
+    useEffect(() => {
+        const handler = () => setIsOpen(prev => !prev);
+        window.addEventListener('dashboard:toggleSidebar', handler as EventListener);
+        return () => {
+            window.removeEventListener('dashboard:toggleSidebar', handler as EventListener);
+        };
+    }, []);
+
+    // Intentionally avoid setState within effects per lint rule
+
     return (
-        <aside className={styles.sidebar}>
+        <>
+        {/* Backdrop for mobile */}
+        {isOpen && <div className={styles.overlay} onClick={() => setIsOpen(false)} />}
+        <aside id="dashboard-sidebar" className={`${styles.sidebar} ${isOpen ? styles.open : ''}`} role="navigation">
             <div className={styles.header}>
                 <span className={styles.logo}>
                     Lookatfy
@@ -64,5 +81,6 @@ export const ExpertSidebar = () => {
                 </button>
             </div>
         </aside>
+        </>
     );
 };

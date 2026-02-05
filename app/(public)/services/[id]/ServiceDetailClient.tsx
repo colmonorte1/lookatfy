@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Star, Clock, MapPin, CheckCircle, Calendar, CreditCard, ChevronLeft, ChevronRight, ShieldCheck, Video, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
+import styles from './ServiceDetailClient.module.css';
 import Link from 'next/link';
 import { ReviewsList } from '@/components/ui/Reviews/ReviewsList';
 import { BookingCalendar } from '@/components/ui/Calendar/BookingCalendar';
@@ -56,7 +57,16 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const router = useRouter();
-    const priceLabel = new Intl.NumberFormat('es-ES', { style: 'currency', currency: service.currency || 'USD' }).format(Number(service.price) || 0);
+    const formatAmount = (cur: string, amount: number) => {
+        if (cur === 'COP') {
+            return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Math.round(amount));
+        }
+        if (cur === 'EUR') {
+            return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
+        }
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    };
+    const priceLabel = formatAmount(service.currency || 'USD', Number(service.price) || 0);
     const country = service.country || expert.country || 'Global';
 
     const formattedReviews = (reviews || []).map((r) => ({
@@ -87,26 +97,31 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
             return `${y}-${m}-${d}`;
         })();
 
-        const params = new URLSearchParams();
-        params.set('title', service.title || '');
-        params.set('expert', expert.name || expert.full_name || 'Experto');
-        params.set('price', String(service.price ?? ''));
-        params.set('date', formattedDate);
-        params.set('time', selectedTime);
-        params.set('currency', service.currency || 'USD');
-        params.set('image', service.image_url || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1200&q=80');
-        params.set('serviceId', String(service.id));
-        params.set('expertId', String(service.expert_id ?? ''));
+        try {
+            const intent = {
+                title: service.title || '',
+                currency: service.currency || 'USD',
+                image: service.image_url || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1200&q=80',
+                serviceId: String(service.id),
+                expertId: String(service.expert_id || ''),
+                date: formattedDate,
+                time: selectedTime
+            };
+            sessionStorage.setItem('checkout_intent', JSON.stringify(intent));
+        } catch {}
 
-        router.push(`/checkout?${params.toString()}`);
+        router.push('/checkout');
     };
 
     const handleDateSelect = (dateStr: string, time: string) => {
-        const d = new Date(dateStr);
-        setSelectedDate(d.getDate());
+        // Parse date string directly to avoid timezone issues
+        // dateStr format: "YYYY-MM-DD"
+        const [, , dayPart] = dateStr.split('-');
+        const day = parseInt(dayPart, 10);
+        setSelectedDate(day);
         setSelectedDateStr(dateStr);
         setSelectedTime(time);
-        setIsCalendarOpen(false); // Close calendar after selection ? or keep open. Let's close it.
+        setIsCalendarOpen(false);
     };
 
     // Fallback/Default values if data is missing
@@ -117,15 +132,14 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
 
     return (
         <main style={{ paddingBottom: '4rem', background: 'rgb(var(--background))', minHeight: '100vh' }}>
-            {/* Header Image */}
-            <div style={{ height: '400px', width: '100%', position: 'relative', overflow: 'hidden' }}>
+            <div className={styles.hero}>
                 <img
                     src={serviceImage}
                     alt={service.title}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)' }} />
-                <div className="container" style={{ position: 'absolute', bottom: '2rem', left: '0', right: '0', color: 'white' }}>
+                <div className={styles.heroOverlay} />
+                <div className={`container ${styles.heroContent}`}>
                     <Link href="/" style={{ color: 'white', display: 'inline-flex', alignItems: 'center', marginBottom: '1rem', textDecoration: 'none', background: 'rgba(0,0,0,0.3)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-full)' }}>
                         <ChevronLeft size={16} /> Volver
                     </Link>
@@ -135,8 +149,8 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                             <Video size={14} /> {service.type}
                         </span>
                     </div>
-                    <h1 style={{ fontSize: '2.5rem', fontWeight: 700, marginBottom: '0.5rem', color: 'white' }}>{service.title}</h1>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '1rem' }}>
+                    <h1 className={styles.heroTitle}>{service.title}</h1>
+                    <div className={styles.heroMeta}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Star fill="currentColor" color="rgb(var(--warning))" size={18} /> {serviceAvg} ({formattedReviews.length} reseñas del servicio)</span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Clock size={18} /> {service.duration} mins</span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><MapPin size={18} /> {country}</span>
@@ -144,59 +158,89 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                 </div>
             </div>
 
-            <div className="container" style={{ marginTop: '2rem', display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '3rem' }}>
+            <div className={`container ${styles.mainGrid}`}>
 
                 {/* Left Column: Details */}
                 <div>
                     {/* Expert Profile Card */}
-                    <div style={{
-                        background: 'rgb(var(--surface))',
-                        padding: '1.5rem',
-                        borderRadius: 'var(--radius-lg)',
-                        border: '1px solid rgb(var(--border))',
-                        marginBottom: '2rem',
-                        display: 'flex',
-                        gap: '1.5rem',
-                        alignItems: 'start'
-                    }}>
-                        <img
-                            src={expertAvatar}
-                            alt={expertName}
-                            style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover' }}
-                        />
-                        <div>
-                            <h3 style={{ fontSize: '1.25rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                {expertName}
-                                {expert.verified && <ShieldCheck size={18} color="rgb(var(--success))" />}
-                            </h3>
-                            <div style={{ color: 'rgb(var(--primary))', fontWeight: 500, marginBottom: '0.5rem' }}>{expertTitle}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'rgb(var(--text-secondary))', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-                                <Star size={16} fill="rgb(var(--warning))" stroke="none" /> {expert.rating_avg ?? 5.0} ({expert.reviews_total ?? 0})
+                    <div className={styles.expertCard}>
+                        {/* Avatar + Name in same row */}
+                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <img
+                                src={expertAvatar}
+                                alt={expertName}
+                                style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                            />
+                            <div>
+                                <h3 style={{ fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, marginBottom: '0.25rem' }}>
+                                    {expertName}
+                                    {expert.verified && <ShieldCheck size={16} color="rgb(var(--success))" />}
+                                </h3>
+                                <div style={{ color: 'rgb(var(--primary))', fontWeight: 500, fontSize: '0.9rem' }}>
+                                    {expertTitle}
+                                </div>
                             </div>
-                            <p style={{ fontSize: '0.95rem', color: 'rgb(var(--text-secondary))', lineHeight: '1.5' }}>
-                                "{expert.bio || 'Experto verificado en Lookatfy.'}"
-                            </p>
-                            {Array.isArray(expert.languages) && expert.languages.length > 0 && (
-                                <div style={{ marginTop: '0.75rem' }}>
-                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.25rem' }}>Idiomas</div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }} aria-label="Idiomas">
-                                        {expert.languages.map((l, idx) => (
-                                            <span key={`${l.name}-${idx}`} style={{ background: 'rgb(var(--surface-hover))', color: 'rgb(var(--text-secondary))', padding: '2px 8px', borderRadius: 6, fontSize: '0.75rem' }}>{l.name} · {l.level}</span>
-                                        ))}
+                        </div>
+
+                        {/* Rating & Timezone */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', color: 'rgb(var(--text-secondary))', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <Star size={16} fill="rgb(var(--warning))" stroke="none" />
+                                <span style={{ fontWeight: 600, color: 'rgb(var(--text-main))' }}>{expert.rating_avg ?? 5.0}</span>
+                                <span>({expert.reviews_total ?? 0} reseñas)</span>
+                            </div>
+                            {expert.timezone && (
+                                <>
+                                    <span style={{ color: 'rgb(var(--border))' }}>|</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                        <Clock size={16} />
+                                        <span>{expert.timezone}</span>
                                     </div>
-                                </div>
-                            )}
-                            {Array.isArray(expert.skills) && expert.skills.length > 0 && (
-                                <div style={{ marginTop: '0.5rem' }}>
-                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.25rem' }}>Skills</div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }} aria-label="Skills">
-                                        {expert.skills.map((s, idx) => (
-                                            <span key={`${s.name}-${idx}`} style={{ background: 'rgb(var(--surface-hover))', color: 'rgb(var(--text-secondary))', padding: '2px 8px', borderRadius: 6, fontSize: '0.75rem' }}>{s.name} · {s.level}</span>
-                                        ))}
-                                    </div>
-                                </div>
+                                </>
                             )}
                         </div>
+
+                        {/* Bio */}
+                        {expert.bio && (
+                            <p style={{ fontSize: '0.9rem', color: 'rgb(var(--text-secondary))', lineHeight: '1.6', marginBottom: '1rem', fontStyle: 'italic', borderLeft: '3px solid rgb(var(--primary))', paddingLeft: '1rem' }}>
+                                "{expert.bio.length > 200 ? expert.bio.slice(0, 200) + '...' : expert.bio}"
+                            </p>
+                        )}
+
+                        {/* Divider */}
+                        <div style={{ width: '100%', height: '1px', background: 'rgb(var(--border))', marginBottom: '1rem' }} />
+
+                        {/* Languages */}
+                        {Array.isArray(expert.languages) && expert.languages.length > 0 && (
+                            <div style={{ marginBottom: '1rem' }}>
+                                <div style={{ fontSize: '0.9rem', color: 'rgb(var(--text-secondary))', marginBottom: '0.5rem' }}>
+                                    <span style={{ fontWeight: 600, color: 'rgb(var(--text-main))' }}>Idiomas:</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }} aria-label="Idiomas">
+                                    {expert.languages.map((l, idx) => (
+                                        <span key={`${l.name}-${idx}`} style={{ padding: '0.35rem 0.75rem', background: 'rgb(var(--surface-hover))', borderRadius: '6px', fontSize: '0.85rem', color: 'rgb(var(--text-secondary))' }}>
+                                            {l.name} ({l.level})
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Profile Link */}
+                        <Link
+                            href={`/experts/${service.expert_id}`}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                color: 'rgb(var(--primary))',
+                                fontWeight: 500,
+                                textDecoration: 'none',
+                                fontSize: '0.9rem'
+                            }}
+                        >
+                            Ver perfil completo <ChevronRight size={16} />
+                        </Link>
                     </div>
 
                     <div style={{ marginBottom: '2rem' }}>
@@ -207,7 +251,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                     </div>
 
                     <div style={{ marginBottom: '2rem' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                        <div className={styles.twoCol}>
                             <div>
                                 <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem', color: 'rgb(var(--text-main))' }}>
                                     Lo que incluye
@@ -241,7 +285,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                     </div>
 
                     <div style={{ marginBottom: '2rem' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                        <div className={styles.twoCol}>
                             <div>
                                 <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem', color: 'rgb(var(--text-main))' }}>
                                     Qué obtienes
@@ -288,15 +332,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
 
                 {/* Right Column: Booking Widget */}
                 <div>
-                    <div style={{
-                        background: 'rgb(var(--surface))',
-                        padding: '1.5rem',
-                        borderRadius: 'var(--radius-lg)',
-                        border: '1px solid rgb(var(--border))',
-                        position: 'sticky',
-                        top: '2rem',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.05)'
-                    }}>
+                    <div className={styles.stickyCard}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgb(var(--border))' }}>
                             <div>
                                 <span style={{ fontSize: '1.75rem', fontWeight: 700 }}>

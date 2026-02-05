@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from '@/components/ui/Button/Button';
-import { ArrowRight, Check, X } from 'lucide-react';
+import { ArrowRight, Check, X, Download } from 'lucide-react';
 import { AdminWithdrawalDetail, approveWithdrawal, markWithdrawalPaid, rejectWithdrawal } from '@/app/admin/withdrawals/actions';
 import { useState } from 'react';
 
@@ -15,6 +15,37 @@ export default function AdminWithdrawalsList({ items }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   const formatCOP = (n: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP' }).format(n);
+
+  const exportCSV = () => {
+    const headers = ['withdrawal_id', 'expert_id', 'expert_name', 'expert_email', 'amount', 'currency', 'status', 'requested_at', 'processed_at', 'transaction_ref', 'bank', 'account_type', 'holder_name', 'commission', 'open_disputes', 'lost_disputes', 'fraud_flag'];
+    const rows = items.map(({ withdrawal: w, expert, commission_amount, risk }) => [
+      w.id,
+      expert.id,
+      expert.full_name || '',
+      expert.email || '',
+      w.amount.toFixed(2),
+      w.currency,
+      w.status,
+      w.requested_at,
+      w.processed_at || '',
+      w.transaction_ref || '',
+      w.bank_snapshot.bank,
+      w.bank_snapshot.account_type,
+      w.bank_snapshot.holder_name,
+      commission_amount.toFixed(2),
+      risk.open_disputes,
+      risk.lost_disputes,
+      risk.fraud_flag ? 'true' : 'false'
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(val => typeof val === 'string' && val.includes(',') ? `"${val}"` : String(val)).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `withdrawals_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleApprove = async (id: string) => {
     setLoadingId(id);
@@ -51,6 +82,26 @@ export default function AdminWithdrawalsList({ items }: Props) {
 
   return (
     <>
+    {/* Header with count and export */}
+    <div style={{
+      background: 'rgb(var(--surface))',
+      borderRadius: 'var(--radius-lg)',
+      border: '1px solid rgb(var(--border))',
+      padding: '1rem 1.5rem',
+      marginBottom: '1rem',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }}>
+      <span style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>
+        {items.length} solicitud{items.length !== 1 ? 'es' : ''} de retiro
+      </span>
+      <Button variant="outline" size="sm" style={{ gap: '0.5rem' }} onClick={exportCSV}>
+        <Download size={16} />
+        Exportar CSV
+      </Button>
+    </div>
+
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {items.map(({ withdrawal: w, expert, bookings, commission_rate, commission_amount, release_date_label, risk }) => (
         <div key={w.id} style={{

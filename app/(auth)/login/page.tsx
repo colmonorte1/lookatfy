@@ -4,28 +4,18 @@ import { Input } from '@/components/ui/Input/Input';
 import { Button } from '@/components/ui/Button/Button';
 import Link from 'next/link';
 import { Mail, Lock } from 'lucide-react';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
-export default function LoginPage() {
+function LoginForm() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
-
-    const scorePassword = (p: string) => {
-        let s = 0;
-        if (p.length >= 8) s++;
-        if (/[A-Z]/.test(p)) s++;
-        if (/[0-9]/.test(p)) s++;
-        if (/[^A-Za-z0-9]/.test(p)) s++;
-        return s;
-    };
-    const strength = scorePassword(password);
-    const strengthLabel = strength <= 1 ? 'Débil' : strength === 2 ? 'Media' : strength === 3 ? 'Buena' : 'Alta';
-    const strengthColor = strength <= 1 ? 'rgb(var(--error))' : strength === 2 ? 'rgb(var(--warning))' : strength === 3 ? 'rgb(var(--primary))' : 'rgb(var(--success))';
+    const searchParams = useSearchParams();
+    const redirectTo = searchParams.get('redirect');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -48,28 +38,39 @@ export default function LoginPage() {
                 return;
             }
 
-            // Check session
             const { data: { user } } = await supabase.auth.getUser();
 
             if (user) {
-                // Fetch role from profiles table (Source of Truth)
                 const { data: profile } = await supabase
                     .from('profiles')
-                    .select('role')
+                    .select('role, status, deleted_at')
                     .eq('id', user.id)
                     .single();
 
-                const role = profile?.role || user.user_metadata?.role || 'client';
-
-                if (role === 'expert') {
-                    router.push('/expert');
-                } else if (role === 'admin') {
-                    router.push('/admin');
-                } else {
-                    router.push('/user');
+                if (profile?.status === 'suspended') {
+                    await supabase.auth.signOut();
+                    setError('Tu cuenta ha sido suspendida. Contacta al administrador para más información.');
+                    return;
                 }
 
-                router.refresh();
+                if (profile?.status === 'deleted' || profile?.deleted_at) {
+                    await supabase.auth.signOut();
+                    setError('Esta cuenta ha sido eliminada. Contacta al administrador si crees que es un error.');
+                    return;
+                }
+
+                if (redirectTo) {
+                    router.push(redirectTo);
+                } else {
+                    const role = profile?.role || 'client';
+                    if (role === 'expert') {
+                        router.push('/expert');
+                    } else if (role === 'admin') {
+                        router.push('/admin');
+                    } else {
+                        router.push('/user');
+                    }
+                }
             }
 
         } catch (err: unknown) {
@@ -125,12 +126,6 @@ export default function LoginPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                     />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <div style={{ height: '8px', background: 'rgb(var(--border))', borderRadius: '999px', width: '120px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${(strength/4)*100}%`, background: strengthColor }} />
-                        </div>
-                        <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>Fortaleza: {strengthLabel}</span>
-                    </div>
                     <div style={{ textAlign: 'right' }}>
                         <Link
                             href="/forgot-password"
@@ -157,5 +152,13 @@ export default function LoginPage() {
                 </Link>
             </p>
         </>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense>
+            <LoginForm />
+        </Suspense>
     );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, User, Calendar, Search, LogOut, Settings, Video, CreditCard, AlertCircle } from 'lucide-react';
 import styles from '../expert/ExpertSidebar.module.css'; // Reusing expert sidebar styles for consistency
@@ -19,6 +20,7 @@ const MENU_ITEMS = [
 export const UserSidebar = () => {
     const pathname = usePathname();
     const router = useRouter();
+    const [isOpen, setIsOpen] = useState(false);
 
     const handleLogout = async () => {
         const supabase = createClient();
@@ -27,8 +29,18 @@ export const UserSidebar = () => {
         router.refresh();
     };
 
+    useEffect(() => {
+        const handler = () => setIsOpen(prev => !prev);
+        window.addEventListener('dashboard:toggleSidebar', handler as EventListener);
+        return () => window.removeEventListener('dashboard:toggleSidebar', handler as EventListener);
+    }, []);
+
+    // Intentionally avoid setState within effects per lint rule
+
     return (
-        <aside className={styles.sidebar}>
+        <>
+        {isOpen && <div className={styles.overlay} onClick={() => setIsOpen(false)} />}
+        <aside id="dashboard-sidebar" className={`${styles.sidebar} ${isOpen ? styles.open : ''}`} role="navigation">
             <div className={styles.header}>
                 <span className={styles.logo}>
                     Lookatfy
@@ -61,5 +73,6 @@ export const UserSidebar = () => {
                 </button>
             </div>
         </aside>
+        </>
     );
 };

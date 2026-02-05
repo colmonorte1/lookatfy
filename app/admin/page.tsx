@@ -1,52 +1,55 @@
-import { Users, Video, DollarSign, TrendingUp, LayoutDashboard, AlertTriangle, Percent, Clock } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
 import AdminDashboardClient from '@/components/admin/AdminDashboardClient';
+import KPICard from '@/components/admin/KPICard';
+import { redirect } from 'next/navigation';
 
-const KPICard = ({ title, value, change, icon: Icon, color }: any) => (
-    <div style={{
-        background: 'rgb(var(--surface))',
-        padding: '1.5rem',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: 'var(--shadow-sm)',
-        border: '1px solid rgb(var(--border))'
-    }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-            <div style={{
-                padding: '0.75rem',
-                borderRadius: '0.75rem',
-                background: `rgba(var(--${color}), 0.1)`,
-                color: `rgb(var(--${color}))`
-            }}>
-                <Icon size={24} />
-            </div>
-            {change && (
-                <span style={{
-                    fontSize: '0.875rem',
-                    color: 'rgb(var(--success))',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.25rem'
-                }}>
-                    <TrendingUp size={14} />
-                    {change}
-                </span>
-            )}
-        </div>
-        <div style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.25rem', color: 'rgb(var(--text-main))' }}>
-            {value}
-        </div>
-        <div style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.875rem' }}>
-            {title}
-        </div>
-    </div>
-);
+// TypeScript interfaces for type safety
+interface ProcessedBooking {
+    id: string;
+    price: number;
+    currency: string;
+    status: string;
+    created_at: string;
+    user_id: string;
+    expert_id: string;
+    service_id: string;
+    expert_name?: string;
+    service_category?: string | null;
+    service_country?: string | null;
+    service_rating_avg?: number | null;
+}
 
 export default async function AdminDashboardPage() {
     const supabase = await createClient();
 
-    const { count: usersCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-    const { count: expertsCount } = await supabase.from('experts').select('*', { count: 'exact', head: true });
+    // Authentication and authorization check
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        redirect('/login?redirect=/admin');
+    }
+
+    // Check if user is admin
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+    if (profileError || !profile || profile.role !== 'admin') {
+        redirect('/');
+    }
+
+    // Count users (excluding deleted)
+    const { count: usersCount } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .is('deleted_at', null);
+
+    // Count experts
+    const { count: expertsCount } = await supabase
+        .from('experts')
+        .select('*', { count: 'exact', head: true });
 
     const { data: settingsData } = await supabase
         .from('platform_settings')
@@ -54,47 +57,133 @@ export default async function AdminDashboardPage() {
         .single();
     const commissionRate = (Number(settingsData?.commission_percentage) || 10) / 100;
 
-    const start30 = new Date();
-    start30.setDate(start30.getDate() - 30);
-    const start30ISO = start30.toISOString();
-
-    const start90 = new Date();
-    start90.setDate(start90.getDate() - 90);
+    // Consolidated date creation for performance
+    const baseDate = new Date();
+    const baseDateTs = baseDate.getTime();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const start30 = new Date(baseDateTs - 30 * DAY_MS);
+    const start60 = new Date(baseDateTs - 60 * DAY_MS);
+    const start90 = new Date(baseDateTs - 90 * DAY_MS);
     const start90ISO = start90.toISOString();
 
-    const { data: bookings90 } = await supabase
+    // Query bookings separately (no JOINs to avoid RLS issues)
+    const { data: bookingsRaw } = await supabase
         .from('bookings')
-        .select(`
-            id, price, currency, status, created_at, user_id, expert_id,
-            expert:experts!expert_id(
-                profile:profiles(full_name)
-            ),
-            service:services!service_id(title, category, country, rating_avg)
-        `)
+        .select('id, price, currency, status, created_at, user_id, expert_id, service_id')
         .in('status', ['confirmed', 'completed'])
         .gte('created_at', start90ISO);
 
-    const b90 = (bookings90 || []).map((b: any) => ({
-        id: b.id as string,
-        price: Number(b.price) || 0,
-        currency: b.currency || 'USD',
-        status: b.status as string,
-        created_at: b.created_at as string,
-        user_id: b.user_id as string,
-        expert_id: b.expert_id as string,
-        expert_name: b.expert?.profile?.full_name || null,
-        service_category: b.service?.category ?? null,
-        service_country: b.service?.country ?? null,
-        service_rating_avg: b.service?.rating_avg ?? null,
-    }));
+    const bookings90 = bookingsRaw || [];
 
-    const volume30 = b90.filter(x => new Date(x.created_at) >= start30).reduce((sum, x) => sum + x.price, 0);
+    // Get unique expert_ids and service_ids for separate queries
+    const expertIds = [...new Set(bookings90.map(b => b.expert_id).filter(Boolean))];
+    const serviceIds = [...new Set(bookings90.map(b => b.service_id).filter(Boolean))];
+
+    // Query experts and profiles separately
+    const { data: expertsData } = expertIds.length > 0
+        ? await supabase.from('experts').select('id, user_id').in('id', expertIds)
+        : { data: [] };
+
+    const expertUserIds = (expertsData || []).map((e: { user_id: string }) => e.user_id).filter(Boolean);
+    const { data: profilesData } = expertUserIds.length > 0
+        ? await supabase.from('profiles').select('id, full_name').in('id', expertUserIds)
+        : { data: [] };
+
+    // Query services separately
+    const { data: servicesData } = serviceIds.length > 0
+        ? await supabase.from('services').select('id, title, category, country, rating_avg').in('id', serviceIds)
+        : { data: [] };
+
+    // Create lookup maps
+    const profilesMap = new Map((profilesData || []).map((p: { id: string; full_name: string }) => [p.id, p.full_name]));
+    const expertsMap = new Map((expertsData || []).map((e: { id: string; user_id: string }) => [e.id, profilesMap.get(e.user_id)]));
+    const servicesMap = new Map((servicesData || []).map((s: { id: string; category?: string; country?: string; rating_avg?: number }) => [s.id, s]));
+
+    // Process bookings with merged data
+    const b90: ProcessedBooking[] = bookings90.map((b) => {
+        const service = servicesMap.get(b.service_id);
+        return {
+            id: b.id,
+            price: Number(b.price) || 0,
+            currency: b.currency || 'USD',
+            status: b.status,
+            created_at: b.created_at,
+            user_id: b.user_id,
+            expert_id: b.expert_id,
+            service_id: b.service_id,
+            expert_name: expertsMap.get(b.expert_id) || undefined,
+            service_category: service?.category ?? null,
+            service_country: service?.country ?? null,
+            service_rating_avg: service?.rating_avg ?? null,
+        };
+    });
+
+    // Optimized: Calculate all metrics in a single pass
+    const metrics = b90.reduce((acc, booking) => {
+        const createdAt = new Date(booking.created_at);
+        const isCurrent = createdAt >= start30;
+        const isPrevious = createdAt >= start60 && createdAt < start30;
+
+        if (isCurrent) {
+            acc.current.volume += booking.price;
+            acc.current.txCount++;
+            if (booking.status === 'completed') acc.current.completed++;
+            acc.current.users.add(booking.user_id);
+            acc.current.experts.add(booking.expert_id);
+        } else if (isPrevious) {
+            acc.previous.volume += booking.price;
+            acc.previous.txCount++;
+            if (booking.status === 'completed') acc.previous.completed++;
+            acc.previous.users.add(booking.user_id);
+            acc.previous.experts.add(booking.expert_id);
+        }
+
+        return acc;
+    }, {
+        current: { volume: 0, txCount: 0, completed: 0, users: new Set<string>(), experts: new Set<string>() },
+        previous: { volume: 0, txCount: 0, completed: 0, users: new Set<string>(), experts: new Set<string>() }
+    });
+
+    // Current period (last 30 days)
+    const volume30 = metrics.current.volume;
     const fees30 = volume30 * commissionRate;
-    const txCount30 = b90.filter(x => new Date(x.created_at) >= start30).length;
-    const completed30 = b90.filter(x => new Date(x.created_at) >= start30 && x.status === 'completed').length;
+    const txCount30 = metrics.current.txCount;
+    const completed30 = metrics.current.completed;
     const completionRate30 = txCount30 ? (completed30 / txCount30) : 0;
-    const uniqueUsers30 = new Set(b90.filter(x => new Date(x.created_at) >= start30).map(x => x.user_id)).size;
-    const uniqueExperts30 = new Set(b90.filter(x => new Date(x.created_at) >= start30).map(x => x.expert_id)).size;
+    const uniqueUsers30 = metrics.current.users.size;
+    const uniqueExperts30 = metrics.current.experts.size;
+
+    // Previous period (30-60 days ago) for comparison
+    const volumePrev = metrics.previous.volume;
+    const feesPrev = volumePrev * commissionRate;
+    const txCountPrev = metrics.previous.txCount;
+    const completedPrev = metrics.previous.completed;
+    const completionRatePrev = txCountPrev ? (completedPrev / txCountPrev) : 0;
+    const uniqueUsersPrev = metrics.previous.users.size;
+    const uniqueExpertsPrev = metrics.previous.experts.size;
+
+    // Calculate percentage changes with division-by-zero protection
+    const calcChange = (current: number, previous: number) => {
+        if (!isFinite(current) || !isFinite(previous)) return 0;
+        if (previous === 0) return current > 0 ? 100 : 0;
+        return ((current - previous) / previous) * 100;
+    };
+
+    // Safe ARPU calculation with division-by-zero protection
+    const safeArpu = (volume: number, users: number) => {
+        if (users === 0 || !isFinite(volume) || !isFinite(users)) return 0;
+        return volume / users;
+    };
+
+    const arpu30 = safeArpu(volume30, uniqueUsers30);
+    const arpuPrev = safeArpu(volumePrev, uniqueUsersPrev);
+
+    const txCountChange = calcChange(txCount30, txCountPrev);
+    const volumeChange = calcChange(volume30, volumePrev);
+    const feesChange = calcChange(fees30, feesPrev);
+    const completionRateChange = calcChange(completionRate30, completionRatePrev);
+    const uniqueExpertsChange = calcChange(uniqueExperts30, uniqueExpertsPrev);
+    const arpuChange = calcChange(arpu30, arpuPrev);
 
     const { data: disputesActive } = await supabase
         .from('disputes')
@@ -108,7 +197,12 @@ export default async function AdminDashboardPage() {
         .gte('created_at', start90ISO);
     const d90 = (disputes90 || []) as Array<{ id: string; status: string; created_at: string; resolved_at?: string | null; booking_id?: string | null }>;
     const d30 = d90.filter(d => new Date(d.created_at) >= start30);
+    const dPrev = d90.filter(d => new Date(d.created_at) >= start60 && new Date(d.created_at) < start30);
     const disputesRate30 = txCount30 ? (d30.length / txCount30) : 0;
+    const disputesRatePrev = txCountPrev ? (dPrev.length / txCountPrev) : 0;
+    const disputesRateChange = calcChange(disputesRate30, disputesRatePrev);
+    const activeDisputesChange = calcChange(activeDisputesCount, dPrev.filter(d => d.status === 'open' || d.status === 'under_review').length);
+
     const resolvedDurations = d30
         .filter(d => d.status === 'resolved_refunded' || d.status === 'resolved_dismissed')
         .map(d => {
@@ -119,6 +213,42 @@ export default async function AdminDashboardPage() {
     const avgResolutionDays = resolvedDurations.length
         ? (resolvedDurations.reduce((a, b) => a + b, 0) / resolvedDurations.length) / (1000 * 60 * 60 * 24)
         : 0;
+
+    const resolvedDurationsPrev = dPrev
+        .filter(d => d.status === 'resolved_refunded' || d.status === 'resolved_dismissed')
+        .map(d => {
+            const start = new Date(d.created_at).getTime();
+            const end = d.resolved_at ? new Date(d.resolved_at).getTime() : start;
+            return Math.max(0, end - start);
+        });
+    const avgResolutionDaysPrev = resolvedDurationsPrev.length
+        ? (resolvedDurationsPrev.reduce((a, b) => a + b, 0) / resolvedDurationsPrev.length) / (1000 * 60 * 60 * 24)
+        : 0;
+    const avgResolutionChange = calcChange(avgResolutionDays, avgResolutionDaysPrev);
+
+    // Calculate weekly sparkline data (last 4 weeks)
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const now = new Date();
+    const sparklineWeeks = 4;
+
+    const txSparkline: number[] = [];
+    const volumeSparkline: number[] = [];
+    const feesSparkline: number[] = [];
+
+    for (let i = sparklineWeeks - 1; i >= 0; i--) {
+        const weekStart = new Date(now.getTime() - (i + 1) * weekMs);
+        const weekEnd = new Date(now.getTime() - i * weekMs);
+
+        const weekBookings = b90.filter(b => {
+            const date = new Date(b.created_at);
+            return date >= weekStart && date < weekEnd;
+        });
+
+        txSparkline.push(weekBookings.length);
+        const weekVolume = weekBookings.reduce((sum, b) => sum + b.price, 0);
+        volumeSparkline.push(weekVolume);
+        feesSparkline.push(weekVolume * commissionRate);
+    }
 
     const formatMoney = (amount: number, currency = 'USD') => new Intl.NumberFormat('es-CO', { style: 'currency', currency }).format(amount);
     const formatPct = (n: number) => `${(n * 100).toFixed(1)}%`;
@@ -136,79 +266,99 @@ export default async function AdminDashboardPage() {
                 <KPICard
                     title="Usuarios Totales"
                     value={usersCount || 0}
-                    change="+0%"
-                    icon={Users}
+                    change={0}
+                    icon="Users"
                     color="primary"
+                    tooltip="Total de usuarios registrados en la plataforma"
                 />
                 <KPICard
-                    title="Expertos Activos"
+                    title="Expertos Totales"
                     value={expertsCount || 0}
-                    change={expertsCount ? "+100%" : "0%"}
-                    icon={Video}
+                    change={0}
+                    icon="Video"
                     color="secondary"
+                    tooltip="Total de expertos registrados en la plataforma"
                 />
                 <KPICard
                     title="Transacciones 30 días"
                     value={txCount30}
-                    change={txCount30 ? "+" : "0%"}
-                    icon={LayoutDashboard}
+                    change={txCountChange}
+                    icon="LayoutDashboard"
                     color="warning"
+                    tooltip="Número de transacciones completadas en los últimos 30 días vs período anterior"
+                    sparkline={txSparkline}
+                    threshold={{ value: 0, type: 'equal', message: "No hay transacciones en los últimos 30 días" }}
                 />
                 <KPICard
                     title="Volumen 30 días"
                     value={formatMoney(volume30)}
-                    change={txCount30 ? "+" : "0%"}
-                    icon={DollarSign}
+                    change={volumeChange}
+                    icon="DollarSign"
                     color="success"
+                    tooltip="Volumen total facturado en los últimos 30 días vs período anterior"
+                    sparkline={volumeSparkline}
                 />
                 <KPICard
                     title={`Comisiones (${Math.round(commissionRate * 100)}%) 30 días`}
                     value={formatMoney(fees30)}
-                    change={txCount30 ? "+" : "0%"}
-                    icon={DollarSign}
+                    change={feesChange}
+                    icon="DollarSign"
                     color="success"
+                    tooltip="Comisiones generadas en los últimos 30 días vs período anterior"
+                    sparkline={feesSparkline}
                 />
                 <KPICard
                     title="Finalización 30 días"
                     value={formatPct(completionRate30)}
-                    change=""
-                    icon={Percent}
+                    change={completionRateChange}
+                    icon="Percent"
                     color="secondary"
+                    tooltip="Porcentaje de transacciones completadas exitosamente"
+                    threshold={{ value: 80, type: 'below', message: "Tasa de finalización por debajo del 80%" }}
                 />
                 <KPICard
                     title="Expertos activos 30 días"
                     value={uniqueExperts30}
-                    change=""
-                    icon={Video}
+                    change={uniqueExpertsChange}
+                    icon="Video"
                     color="primary"
+                    tooltip="Número de expertos con al menos 1 transacción en los últimos 30 días"
+                    threshold={{ value: 0, type: 'equal', message: "No hay expertos activos" }}
                 />
                 <KPICard
                     title="ARPU 30 días"
-                    value={uniqueUsers30 ? formatMoney(volume30 / uniqueUsers30) : formatMoney(0)}
-                    change=""
-                    icon={DollarSign}
+                    value={formatMoney(arpu30)}
+                    change={arpuChange}
+                    icon="DollarSign"
                     color="primary"
+                    tooltip="Ingreso promedio por usuario (Average Revenue Per User)"
                 />
                 <KPICard
                     title="Disputas activas"
                     value={activeDisputesCount}
-                    change=""
-                    icon={AlertTriangle}
+                    change={activeDisputesChange}
+                    icon="AlertTriangle"
                     color="warning"
+                    tooltip="Disputas abiertas o en revisión actualmente"
+                    threshold={{ value: 5, type: 'above', message: "Alto número de disputas activas" }}
                 />
                 <KPICard
                     title="Tasa de disputa 30 días"
                     value={formatPct(disputesRate30)}
-                    change=""
-                    icon={AlertTriangle}
+                    change={disputesRateChange}
+                    icon="AlertTriangle"
                     color="warning"
+                    tooltip="Porcentaje de transacciones que generaron disputas"
+                    threshold={{ value: 5, type: 'above', message: "Tasa de disputas superior al 5%" }}
                 />
                 <KPICard
                     title="Tiempo medio resolución"
                     value={`${avgResolutionDays.toFixed(1)} días`}
-                    change=""
-                    icon={Clock}
+                    change={avgResolutionChange}
+                    icon="Clock"
                     color="secondary"
+                    tooltip="Tiempo promedio para resolver disputas"
+                    threshold={{ value: 7, type: 'above', message: "Tiempo de resolución superior a 7 días" }}
                 />
             </div>
 
@@ -219,23 +369,39 @@ export default async function AdminDashboardPage() {
                 overflow: 'hidden',
                 padding: '1rem'
             }}>
-                <AdminDashboardClient 
+                <AdminDashboardClient
                     commissionRate={commissionRate}
                     bookings={b90}
-                    disputes={d90.map(d => {
-                        const bk = b90.find(x => x.id === d.booking_id);
-                        return {
-                            id: d.id,
-                            status: d.status,
-                            created_at: d.created_at,
-                            resolved_at: d.resolved_at,
-                            booking_id: d.booking_id,
-                            booking_price: bk?.price ?? null,
-                            booking_currency: bk?.currency ?? null,
-                        };
-                    })}
+                    disputes={(() => {
+                        // Pre-index bookings by ID for O(1) lookup
+                        const bookingMap = new Map(b90.map(b => [b.id, b]));
+
+                        return d90.map(d => {
+                            const bk = d.booking_id ? bookingMap.get(d.booking_id) : undefined;
+                            return {
+                                id: d.id,
+                                status: d.status,
+                                created_at: d.created_at,
+                                resolved_at: d.resolved_at,
+                                booking_id: d.booking_id,
+                                booking_price: bk?.price ?? null,
+                                booking_currency: bk?.currency ?? null,
+                            };
+                        });
+                    })()}
                 />
             </div>
+
+            <style>{`
+                @keyframes pulse {
+                    0%, 100% {
+                        opacity: 1;
+                    }
+                    50% {
+                        opacity: 0.5;
+                    }
+                }
+            `}</style>
         </div>
     );
 }

@@ -1,66 +1,166 @@
 import { createClient } from '@/utils/supabase/server';
+import { redirect } from 'next/navigation';
+import Pagination from '@/components/ui/Pagination/Pagination';
+import Alert from '@/components/ui/Alert/Alert';
+import PaymentsDashboard from './PaymentsDashboard';
+import SearchFilters from './SearchFilters';
 import AdminPaymentsClient from '@/components/admin/AdminPaymentsClient';
 
-export default async function AdminPaymentsPage() {
+interface PageProps {
+    searchParams: Promise<{
+        page?: string;
+        search?: string;
+        status?: string;
+        range?: string;
+    }>;
+}
+
+const ITEMS_PER_PAGE = 20;
+
+export default async function AdminPaymentsPage({ searchParams }: PageProps) {
     const supabase = await createClient();
 
-    // Fetch Bookings that represent payments (confirmed or completed)
-    const { data: bookings, error } = await supabase
-        .from('bookings')
-        .select(`
-            *,
-            user:profiles!user_id(full_name),
-            expert:experts!expert_id(
-                profile:profiles(full_name)
-            )
-        `)
-        .in('status', ['confirmed', 'completed'])
-        .order('created_at', { ascending: false });
+    // Authentication and authorization check
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (error) {
-        console.error("Error fetching payments:", error);
+    if (authError || !user) {
+        redirect('/login?redirect=/admin/payments');
     }
 
-    type TransactionRow = {
-        id: string;
-        price?: number | string;
-        currency?: string;
-        status: string;
-        created_at?: string;
-        date?: string;
-        user?: { full_name?: string } | { full_name?: string }[];
-        expert?: { profile?: { full_name?: string } } | { profile?: { full_name?: string } }[];
-    };
-    const transactions = (bookings || []) as TransactionRow[];
+    // Check if user is admin
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
 
-    const { data: disputes } = await supabase
-        .from('disputes')
-        .select('booking_id, status, created_at')
-        .in('status', ['open', 'under_review']);
-    const disputedBookingIds = new Set(((disputes || []) as { booking_id: string; status: string }[]).map(d => d.booking_id));
+    if (profileError || !profile || profile.role !== 'admin') {
+        redirect('/');
+    }
 
+    // Get filters from search params
+    const params = await searchParams;
+    const currentPage = Math.max(1, parseInt(params.page || '1'));
+    const searchQuery = params.search || '';
+    const statusFilter = params.status || '';
+    const dateRange = params.range || '';
+    const offset = (currentPage - 1) * ITEMS_PER_PAGE;
+
+    // Get commission rate
     const { data: settingsData } = await supabase
         .from('platform_settings')
         .select('commission_percentage')
         .single();
-
     const commissionRate = (Number(settingsData?.commission_percentage) || 10) / 100;
-    const formattedTransactions = transactions.map(t => ({
+
+    // Build date filter
+    let dateFilter: Date | null = null;
+    if (dateRange && dateRange !== 'all') {
+        const days = parseInt(dateRange);
+        if (!isNaN(days)) {
+            dateFilter = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        }
+    }
+
+    // Fetch bookings WITHOUT joins to avoid RLS issues
+    let bookingsQuery = supabase
+        .from('bookings')
+        .select('*')
+        .in('status', ['confirmed', 'completed'])
+        .order('created_at', { ascending: false });
+
+    if (dateFilter) {
+        bookingsQuery = bookingsQuery.gte('created_at', dateFilter.toISOString());
+    }
+
+    const { data: allBookings, error: bookingsError } = await bookingsQuery;
+
+    if (bookingsError) {
+        console.error("Error fetching payments:", bookingsError);
+    }
+
+    // Fetch disputes
+    const { data: disputes } = await supabase
+        .from('disputes')
+        .select('booking_id, status, created_at')
+        .in('status', ['open', 'under_review']);
+
+    const disputedBookingIds = new Set(
+        (disputes || []).map(d => d.booking_id).filter(Boolean)
+    );
+
+    // Fetch user profiles separately
+    const userIds = [...new Set((allBookings || []).map(b => b.user_id).filter(Boolean))];
+    let usersMap: Record<string, { full_name?: string | null }> = {};
+
+    if (userIds.length > 0) {
+        const { data: users } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', userIds);
+
+        if (users) {
+            usersMap = users.reduce((acc: any, u: any) => {
+                acc[u.id] = { full_name: u.full_name };
+                return acc;
+            }, {});
+        }
+    }
+
+    // Fetch expert profiles separately
+    const expertIds = [...new Set((allBookings || []).map(b => b.expert_id).filter(Boolean))];
+    let expertsMap: Record<string, { full_name?: string | null }> = {};
+
+    if (expertIds.length > 0) {
+        const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', expertIds);
+
+        if (profiles) {
+            expertsMap = profiles.reduce((acc: any, p: any) => {
+                acc[p.id] = { full_name: p.full_name };
+                return acc;
+            }, {});
+        }
+    }
+
+    // Format transactions with user/expert names
+    let transactions = (allBookings || []).map(t => ({
         id: t.id,
         date: t.created_at || t.date || new Date().toISOString(),
         status: t.status,
         price: Number(t.price || 0),
-        currency: t.currency || 'USD',
-        userFullName: Array.isArray(t.user) ? t.user[0]?.full_name : t.user?.full_name,
-        expertFullName: Array.isArray(t.expert) ? t.expert[0]?.profile?.full_name : t.expert?.profile?.full_name
+        currency: t.currency || 'COP',
+        userFullName: t.user_id ? usersMap[t.user_id]?.full_name : null,
+        expertFullName: t.expert_id ? expertsMap[t.expert_id]?.full_name : null,
+        inDispute: disputedBookingIds.has(t.id)
     }));
 
-    const totalVolume = formattedTransactions.reduce((sum, t) => sum + t.price, 0);
-    const platformFees = totalVolume * commissionRate;
-    const transactionCount = formattedTransactions.length;
-    const disputesCount = formattedTransactions.filter(t => disputedBookingIds.has(t.id)).length;
+    // Apply search filter
+    if (searchQuery) {
+        const lowerSearch = searchQuery.toLowerCase();
+        transactions = transactions.filter(t => {
+            const idMatch = t.id.toLowerCase().includes(lowerSearch);
+            const userMatch = (t.userFullName || '').toLowerCase().includes(lowerSearch);
+            const expertMatch = (t.expertFullName || '').toLowerCase().includes(lowerSearch);
+            return idMatch || userMatch || expertMatch;
+        });
+    }
 
-    const formatMoney = (amount: number, currency = 'USD') => new Intl.NumberFormat('es-CO', { style: 'currency', currency }).format(amount);
+    // Apply status filter
+    if (statusFilter && statusFilter !== 'all') {
+        if (statusFilter === 'disputed') {
+            transactions = transactions.filter(t => t.inDispute);
+        } else {
+            transactions = transactions.filter(t => t.status === statusFilter);
+        }
+    }
+
+    // Pagination
+    const totalCount = transactions.length;
+    const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+    const paginatedTransactions = transactions.slice(offset, offset + ITEMS_PER_PAGE);
 
     return (
         <div>
@@ -68,38 +168,48 @@ export default async function AdminPaymentsPage() {
                 <h1 style={{ fontSize: '2rem' }}>Pagos y Transacciones</h1>
             </div>
 
-            {/* Metrics Quick View */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
-                <div style={{ background: 'rgb(var(--surface))', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))' }}>
-                    <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Volumen Total (Histórico)</div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 700, marginTop: '0.25rem' }}>{formatMoney(totalVolume)}</div>
+            {bookingsError && (
+                <div style={{ marginBottom: '2rem' }}>
+                    <Alert
+                        type="error"
+                        title="Error al cargar pagos"
+                        message="No se pudieron cargar los pagos. Por favor, intenta recargar la página."
+                    />
                 </div>
-                <div style={{ background: 'rgb(var(--surface))', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))' }}>
-                    <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Comisiones Plataforma ({commissionRate * 100}%)</div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 700, marginTop: '0.25rem', color: 'rgb(var(--success))' }}>{formatMoney(platformFees)}</div>
-                </div>
-                <div style={{ background: 'rgb(var(--surface))', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))' }}>
-                    <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Transacciones Exitosas</div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 700, marginTop: '0.25rem' }}>{transactionCount}</div>
-                </div>
-                <div style={{ background: 'rgb(var(--surface))', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid rgb(var(--border))' }}>
-                    <div style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Transacciones en disputa</div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 700, marginTop: '0.25rem', color: 'rgb(var(--error))' }}>{disputesCount}</div>
-                </div>
-            </div>
+            )}
 
+            {/* Dashboard with KPIs */}
+            <PaymentsDashboard />
+
+            {/* Search and Filters */}
+            <SearchFilters />
+
+            {/* Transactions Table */}
             <div style={{
                 background: 'rgb(var(--surface))',
                 borderRadius: 'var(--radius-lg)',
                 border: '1px solid rgb(var(--border))',
                 overflow: 'hidden'
             }}>
-                <AdminPaymentsClient 
-                    transactions={formattedTransactions}
+                <AdminPaymentsClient
+                    transactions={paginatedTransactions}
                     commissionRate={commissionRate}
                     disputedIds={Array.from(disputedBookingIds)}
                     disputes={(disputes || []) as { created_at: string; status: string }[]}
                 />
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+                <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    basePath="/admin/payments"
+                />
+            )}
+
+            <div style={{ textAlign: 'center', color: 'rgb(var(--text-muted))', fontSize: '0.875rem', marginTop: '1rem' }}>
+                Mostrando {paginatedTransactions.length > 0 ? offset + 1 : 0} - {offset + paginatedTransactions.length} de {totalCount} transacciones
             </div>
         </div>
     );

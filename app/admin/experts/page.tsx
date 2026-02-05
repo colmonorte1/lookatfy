@@ -2,7 +2,12 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/Button/Button';
 import { Plus, CheckCircle, XCircle } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
+import { redirect } from 'next/navigation';
 import { ExpertActions } from '@/components/admin/ExpertActions';
+import Pagination from '@/components/ui/Pagination/Pagination';
+import Alert from '@/components/ui/Alert/Alert';
+import SearchFilters from './SearchFilters';
+import ExpertsDashboard from './ExpertsDashboard';
 
 interface ExpertRow {
     id: string;
@@ -11,26 +16,140 @@ interface ExpertRow {
     profiles?: { full_name?: string | null; email?: string | null } | null;
 }
 
-export default async function AdminExpertsPage() {
+interface PageProps {
+    searchParams: Promise<{ page?: string; search?: string; verified?: string }>;
+}
+
+const ITEMS_PER_PAGE = 20;
+
+export default async function AdminExpertsPage({ searchParams }: PageProps) {
     const supabase = await createClient();
 
-    // Fetch experts with joined profile data
-    const { data: experts, error } = await supabase
-        .from('experts')
-        .select(`
-            *,
-            profiles (
-                full_name,
-                email
-            )
-        `)
-        .order('created_at', { ascending: false });
+    // Authentication and authorization check
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (error) {
-        console.error("Error fetching experts:", error);
+    if (authError || !user) {
+        redirect('/login?redirect=/admin/experts');
     }
 
-    const expertList = experts || [];
+    // Check if user is admin
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+    if (profileError || !profile || profile.role !== 'admin') {
+        redirect('/');
+    }
+
+    // Get current page and filters from search params
+    const params = await searchParams;
+    const currentPage = Math.max(1, parseInt(params.page || '1'));
+    const searchQuery = params.search || '';
+    const verifiedFilter = params.verified || '';
+    const offset = (currentPage - 1) * ITEMS_PER_PAGE;
+
+    // Fetch experts - first try with deleted_at filter, fallback without it
+    let allExperts: any[] | null = null;
+    let allError: any = null;
+
+    // Try fetching experts (handle case where deleted_at column might not exist)
+    let expertsQuery = supabase
+        .from('experts')
+        .select('*');
+
+    // Try to filter by deleted_at (column may not exist in older schemas)
+    try {
+        const { data: expertsWithDelete, error: deleteError } = await supabase
+            .from('experts')
+            .select('*')
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false });
+
+        if (deleteError && deleteError.message?.includes('deleted_at')) {
+            // Column doesn't exist, fetch without filter
+            const { data, error } = await supabase
+                .from('experts')
+                .select('*')
+                .order('created_at', { ascending: false });
+            allExperts = data;
+            allError = error;
+        } else {
+            allExperts = expertsWithDelete;
+            allError = deleteError;
+        }
+    } catch {
+        // Fallback: fetch without deleted_at filter
+        const { data, error } = await supabase
+            .from('experts')
+            .select('*')
+            .order('created_at', { ascending: false });
+        allExperts = data;
+        allError = error;
+    }
+
+    // Fetch profiles separately to avoid RLS issues with joins
+    // Note: expert.id = profile.id in this schema (1:1 relationship)
+    const expertIds = (allExperts || []).map((e: any) => e.id).filter(Boolean);
+    let profilesMap: Record<string, { full_name?: string | null; email?: string | null }> = {};
+
+    if (expertIds.length > 0) {
+        const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, full_name, email')
+            .in('id', expertIds);
+
+        if (profiles) {
+            profilesMap = profiles.reduce((acc: any, p: any) => {
+                acc[p.id] = { full_name: p.full_name, email: p.email };
+                return acc;
+            }, {});
+        }
+    }
+
+    // Merge experts with profiles (expert.id = profile.id)
+    let expertsWithProfiles = (allExperts || []).map((expert: any) => ({
+        ...expert,
+        profiles: profilesMap[expert.id] || null
+    }));
+
+    if (allError) {
+        console.error("Error fetching experts:", {
+            message: allError.message,
+            details: allError.details,
+            hint: allError.hint,
+            code: allError.code
+        });
+    }
+
+    // Apply verified filter
+    if (verifiedFilter && verifiedFilter !== 'all') {
+        const isVerified = verifiedFilter === 'verified';
+        expertsWithProfiles = expertsWithProfiles.filter((e: any) => e.verified === isVerified);
+    }
+
+    // Filter by search query (name, email, or title)
+    let filteredExperts = expertsWithProfiles;
+    if (searchQuery) {
+        const lowerSearch = searchQuery.toLowerCase();
+        filteredExperts = expertsWithProfiles.filter((expert: any) => {
+            const profile = expert.profiles || {};
+            const fullName = (profile?.full_name || '').toLowerCase();
+            const email = (profile?.email || '').toLowerCase();
+            const title = (expert.title || '').toLowerCase();
+
+            return fullName.includes(lowerSearch) ||
+                   email.includes(lowerSearch) ||
+                   title.includes(lowerSearch);
+        });
+    }
+
+    // Apply pagination to filtered results
+    const totalCount = filteredExperts.length;
+    const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+    const expertList = filteredExperts.slice(offset, offset + ITEMS_PER_PAGE);
+    const error = allError;
 
     return (
         <div>
@@ -43,6 +162,20 @@ export default async function AdminExpertsPage() {
                     </Button>
                 </Link>
             </div>
+
+            {error && (
+                <div style={{ marginBottom: '2rem' }}>
+                    <Alert
+                        type="error"
+                        title="Error al cargar expertos"
+                        message="No se pudieron cargar los expertos. Por favor, intenta recargar la página."
+                    />
+                </div>
+            )}
+
+            <ExpertsDashboard />
+
+            <SearchFilters />
 
             <div style={{
                 background: 'rgb(var(--surface))',
@@ -106,6 +239,18 @@ export default async function AdminExpertsPage() {
                         )}
                     </tbody>
                 </table>
+            </div>
+
+            {totalPages > 1 && (
+                <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    basePath="/admin/experts"
+                />
+            )}
+
+            <div style={{ textAlign: 'center', color: 'rgb(var(--text-muted))', fontSize: '0.875rem', marginTop: '1rem' }}>
+                Mostrando {expertList.length > 0 ? offset + 1 : 0} - {offset + expertList.length} de {totalCount || 0} expertos
             </div>
         </div>
     );

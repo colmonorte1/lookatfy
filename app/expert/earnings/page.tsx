@@ -50,13 +50,22 @@ export default async function ExpertEarningsPage() {
         .filter(b => b.status === 'completed' && !refundedBookingIds.has(b.id))
         .reduce((sum, b) => sum + (Number(b.price) || 0), 0);
 
-    // "Pendiente por realizar" -> Sum of CONFIRMED (Future revenue)
+    // "Pendiente por realizar" -> Sum of CONFIRMED (Future revenue) - Exclude disputed and refunded
+    const todayDate = new Date().toISOString().split('T')[0];
     const pendingEarnings = allBookings
-        .filter(b => b.status === 'confirmed')
+        .filter(b => {
+            if (b.status !== 'confirmed') return false;
+            if (disputedBookingIds.has(b.id)) return false; // Exclude disputed
+            if (refundedBookingIds.has(b.id)) return false; // Exclude refunded
+            if (b.date < todayDate) return false; // Only future bookings
+            return true;
+        })
         .reduce((sum, b) => sum + (Number(b.price) || 0), 0);
 
-    // "Servicios Completados"
-    const completedCount = allBookings.filter(b => b.status === 'completed').length;
+    // "Servicios Completados" - Exclude refunded bookings
+    const completedCount = allBookings
+        .filter(b => b.status === 'completed' && !refundedBookingIds.has(b.id))
+        .length;
 
     // "Mes Actual" Revenue (Completed)
     const today = new Date();
@@ -71,9 +80,6 @@ export default async function ExpertEarningsPage() {
     const monthNet = currentMonthEarnings - monthCommission;
     const pendingCommission = pendingEarnings * commissionRate;
     const pendingNet = pendingEarnings - pendingCommission;
-
-    const totalsCommissionVisible = allBookings.reduce((sum, tx) => sum + (Number(tx.price) || 0) * commissionRate, 0);
-    const totalsNetVisible = allBookings.reduce((sum, tx) => sum + ((Number(tx.price) || 0) - (Number(tx.price) || 0) * commissionRate), 0);
 
     const formatCOP = (val: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP' }).format(val);
 
@@ -151,7 +157,7 @@ export default async function ExpertEarningsPage() {
                     <div>
                         <div style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.875rem', fontWeight: 500 }}>Por Realizar</div>
                         <div style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0.25rem 0' }}>Neto est.: {formatCOP(pendingNet)}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-muted))', fontWeight: 500 }}>Bruto: {formatCOP(pendingEarnings)} • Comisión est.: {formatCOP(pendingCommission)} — {allBookings.filter(b => b.status === 'confirmed').length} Citas Futuras</div>
+                        <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-muted))', fontWeight: 500 }}>Bruto: {formatCOP(pendingEarnings)} • Comisión est.: {formatCOP(pendingCommission)} — {allBookings.filter(b => b.status === 'confirmed' && !disputedBookingIds.has(b.id) && !refundedBookingIds.has(b.id) && b.date >= todayDate).length} Citas Futuras</div>
                     </div>
                 </div>
             </div>

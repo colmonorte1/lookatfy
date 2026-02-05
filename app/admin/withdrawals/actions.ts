@@ -2,6 +2,8 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { sendEmail } from '@/lib/email/brevo';
+import { withdrawalApprovedTemplate, withdrawalPaidTemplate, withdrawalRejectedTemplate } from '@/lib/email/templates';
 
 export type AdminWithdrawal = {
   id: string;
@@ -187,6 +189,29 @@ export async function approveWithdrawal(id: string, notes?: string) {
     .update({ status: 'approved', admin_notes: notes || null, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) return { error: error.message };
+  try {
+    const { data: w } = await adminClient
+      .from('withdrawals')
+      .select('expert_id, amount, currency')
+      .eq('id', id)
+      .single();
+    if (w?.expert_id) {
+      await adminClient.from('notifications').insert({
+        recipient_user_id: w.expert_id,
+        type: 'withdrawal_approved',
+        title: 'Retiro aprobado',
+        body: `Tu retiro fue aprobado por ${String(w.amount)} ${String(w.currency)}`,
+        data: { withdrawal_id: id },
+        status: 'unread',
+      });
+      // Send email
+      const { data: profile } = await adminClient.from('profiles').select('email, full_name').eq('id', w.expert_id).single();
+      if (profile?.email) {
+        const html = withdrawalApprovedTemplate({ expertName: profile.full_name || 'Experto', amount: Number(w.amount), currency: String(w.currency) });
+        await sendEmail({ to: profile.email, subject: 'Retiro aprobado', html }).catch(() => {});
+      }
+    }
+  } catch {}
   revalidatePath('/admin/withdrawals');
   return { success: true };
 }
@@ -201,6 +226,29 @@ export async function markWithdrawalPaid(id: string, transactionRef: string) {
     .update({ status: 'paid', transaction_ref: transactionRef, processed_at: now, updated_at: now })
     .eq('id', id);
   if (error) return { error: error.message };
+  try {
+    const { data: w } = await adminClient
+      .from('withdrawals')
+      .select('expert_id, amount, currency')
+      .eq('id', id)
+      .single();
+    if (w?.expert_id) {
+      await adminClient.from('notifications').insert({
+        recipient_user_id: w.expert_id,
+        type: 'withdrawal_paid',
+        title: 'Retiro pagado',
+        body: `Pago emitido por ${String(w.amount)} ${String(w.currency)}.`,
+        data: { withdrawal_id: id, transaction_ref: transactionRef },
+        status: 'unread',
+      });
+      // Send email
+      const { data: profile } = await adminClient.from('profiles').select('email, full_name').eq('id', w.expert_id).single();
+      if (profile?.email) {
+        const html = withdrawalPaidTemplate({ expertName: profile.full_name || 'Experto', amount: Number(w.amount), currency: String(w.currency), transactionRef });
+        await sendEmail({ to: profile.email, subject: 'Pago emitido', html }).catch(() => {});
+      }
+    }
+  } catch {}
   revalidatePath('/admin/withdrawals');
   return { success: true };
 }
@@ -213,6 +261,29 @@ export async function rejectWithdrawal(id: string, notes: string) {
     .update({ status: 'rejected', admin_notes: notes || null, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) return { error: error.message };
+  try {
+    const { data: w } = await adminClient
+      .from('withdrawals')
+      .select('expert_id, amount, currency')
+      .eq('id', id)
+      .single();
+    if (w?.expert_id) {
+      await adminClient.from('notifications').insert({
+        recipient_user_id: w.expert_id,
+        type: 'withdrawal_rejected',
+        title: 'Retiro rechazado',
+        body: String(notes || ''),
+        data: { withdrawal_id: id },
+        status: 'unread',
+      });
+      // Send email
+      const { data: profile } = await adminClient.from('profiles').select('email, full_name').eq('id', w.expert_id).single();
+      if (profile?.email) {
+        const html = withdrawalRejectedTemplate({ expertName: profile.full_name || 'Experto', amount: Number(w.amount || 0), currency: String(w.currency || 'COP'), reason: notes });
+        await sendEmail({ to: profile.email, subject: 'Retiro rechazado', html }).catch(() => {});
+      }
+    }
+  } catch {}
   revalidatePath('/admin/withdrawals');
   return { success: true };
 }

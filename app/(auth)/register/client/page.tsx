@@ -6,51 +6,94 @@ import Link from 'next/link';
 import { Mail, Lock, User, ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/utils/supabase/client';
+import { registerClient } from '../../actions';
 
 export default function ClientRegisterPage() {
-    const [fullName, setFullName] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [emailSent, setEmailSent] = useState(false);
     const router = useRouter();
+
+    const scorePassword = (p: string) => {
+        let s = 0;
+        if (p.length >= 8) s++;
+        if (/[A-Z]/.test(p)) s++;
+        if (/[0-9]/.test(p)) s++;
+        if (/[^A-Za-z0-9]/.test(p)) s++;
+        return s;
+    };
+    const strength = scorePassword(password);
+    const strengthLabel = strength <= 1 ? 'Débil' : strength === 2 ? 'Media' : strength === 3 ? 'Buena' : 'Alta';
+    const strengthColor = strength <= 1 ? 'rgb(var(--error))' : strength === 2 ? 'rgb(var(--warning))' : strength === 3 ? 'rgb(var(--primary))' : 'rgb(var(--success))';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
         setError(null);
 
+        if (password.length < 8) {
+            setError('La contraseña debe tener al menos 8 caracteres.');
+            setIsLoading(false);
+            return;
+        }
+
+        if (strength < 2) {
+            setError('La contraseña es muy débil. Incluye mayúsculas, números o caracteres especiales.');
+            setIsLoading(false);
+            return;
+        }
+
         try {
-            const supabase = createClient();
-            const { error } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: {
-                        full_name: fullName,
-                        role: 'client'
-                    }
-                }
-            });
+            const result = await registerClient({ firstName, lastName, email, password });
 
-            if (error) throw error;
+            if (!result.success) {
+                setError(result.error || 'Error al registrarse');
+                return;
+            }
 
-            // Success redirect, or show check email message
-            // Since we might have email confirmation enabled by default in Supabase, 
-            // checking "user" object or session is wise.
-            // For MVP often we turn off confirm email for faster testing or handle the "Check your email" state.
-            // Assuming auto-confirm or ignoring for now:
-
-            router.push('/user/profile');
-
-        } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            setError(msg || 'Error al registrarse');
+            if (result.needsEmailConfirmation) {
+                setEmailSent(true);
+            } else {
+                router.push('/user');
+            }
+        } catch {
+            setError('Error inesperado al registrarse. Intenta de nuevo.');
         } finally {
             setIsLoading(false);
         }
     };
+
+    if (emailSent) {
+        return (
+            <div style={{ maxWidth: '500px', margin: '0 auto', textAlign: 'center' }}>
+                <div style={{
+                    width: '60px',
+                    height: '60px',
+                    background: 'rgba(var(--success), 0.1)',
+                    color: 'rgb(var(--success))',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 1.5rem',
+                }}>
+                    <Mail size={30} />
+                </div>
+                <h1 style={{ fontSize: '1.75rem', marginBottom: '1rem' }}>Revisa tu correo</h1>
+                <p style={{ color: 'rgb(var(--text-secondary))', marginBottom: '2rem', lineHeight: 1.6 }}>
+                    Hemos enviado un enlace de confirmación a <strong>{email}</strong>.
+                    Revisa tu bandeja de entrada (y spam) para activar tu cuenta.
+                </p>
+                <Link href="/login" style={{ color: 'rgb(var(--primary))', fontWeight: 600 }}>
+                    Ir al Login
+                </Link>
+            </div>
+        );
+    }
 
     return (
         <div style={{ maxWidth: '500px', margin: '0 auto' }}>
@@ -78,14 +121,23 @@ export default function ClientRegisterPage() {
             )}
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                <Input
-                    label="Nombre Completo"
-                    placeholder="Tu nombre y apellidos"
-                    icon={<User size={18} />}
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <Input
+                        label="Nombre"
+                        placeholder="Tu nombre"
+                        icon={<User size={18} />}
+                        required
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                    />
+                    <Input
+                        label="Apellidos"
+                        placeholder="Tus apellidos"
+                        required
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                    />
+                </div>
 
                 <Input
                     label="Correo electrónico"
@@ -97,15 +149,28 @@ export default function ClientRegisterPage() {
                     onChange={(e) => setEmail(e.target.value)}
                 />
 
-                <Input
-                    label="Contraseña"
-                    type="password"
-                    placeholder="Crea una contraseña segura"
-                    icon={<Lock size={18} />}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <Input
+                        label="Contraseña"
+                        type="password"
+                        placeholder="Crea una contraseña segura"
+                        icon={<Lock size={18} />}
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                    />
+                    {password.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <div style={{ height: '8px', background: 'rgb(var(--border))', borderRadius: '999px', width: '120px', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${(strength / 4) * 100}%`, background: strengthColor, transition: 'width 0.3s' }} />
+                            </div>
+                            <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>Fortaleza: {strengthLabel}</span>
+                        </div>
+                    )}
+                    <p style={{ fontSize: '0.75rem', color: 'rgb(var(--text-muted))' }}>
+                        Mínimo 8 caracteres. Usa mayúsculas, números y símbolos para mayor seguridad.
+                    </p>
+                </div>
 
                 <Button
                     type="submit"

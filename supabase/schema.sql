@@ -437,3 +437,58 @@ ALTER TABLE public.bookings
 -- User timezone preference
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS timezone TEXT;
+
+-- Helper: Get current user's role (for RLS policies)
+CREATE OR REPLACE FUNCTION public.get_current_role()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT role FROM public.profiles WHERE id = auth.uid();
+$$;
+
+-- 16. Notifications (In-App)
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  recipient_user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  target_role TEXT CHECK (target_role IN ('client','expert','admin')),
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  data JSONB DEFAULT '{}'::jsonb,
+  status TEXT NOT NULL DEFAULT 'unread' CHECK (status IN ('unread','read','archived')),
+  created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT notifications_target_check CHECK (
+    (recipient_user_id IS NOT NULL) <> (target_role IS NOT NULL)
+  )
+);
+
+-- Indexes for Notifications
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_status
+  ON public.notifications (recipient_user_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_target_role
+  ON public.notifications (target_role, created_at);
+
+-- RLS for Notifications
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users view own notifications or role broadcasts"
+  ON public.notifications FOR SELECT
+  USING (
+    auth.uid() = recipient_user_id
+    OR target_role = public.get_current_role()
+  );
+
+CREATE POLICY "Admins insert notifications"
+  ON public.notifications FOR INSERT
+  WITH CHECK (
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin'
+  );
+
+CREATE POLICY "Users update own notification status"
+  ON public.notifications FOR UPDATE
+  USING (auth.uid() = recipient_user_id);
+
+CREATE POLICY "Users can delete own notifications"
+  ON public.notifications FOR DELETE
+  USING (auth.uid() = recipient_user_id);

@@ -17,6 +17,12 @@
     justify-content: space-between;
 }
 
+.left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 .right {
     display: flex;
     align-items: center;
@@ -45,6 +51,25 @@
     background: rgb(var(--surface-hover));
     color: rgb(var(--primary));
     transform: translateY(-1px);
+}
+
+.menuButton {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(var(--border));
+    background: rgb(var(--surface));
+    color: rgb(var(--text-secondary));
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.menuButton:hover {
+    background: rgb(var(--surface-hover));
+    color: rgb(var(--primary));
 }
 
 .badge {

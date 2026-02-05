@@ -52,21 +52,48 @@ export async function getMasterData() {
     const { data: countries } = await supabase.from('active_countries').select('*').order('name');
     const { data: currencies } = await supabase.from('active_currencies').select('*').order('name');
     const { data: categories } = await supabase.from('service_categories').select('*').order('name');
+
     let serviceTypes: any[] = [];
     try {
         const { data } = await supabase.from('service_types').select('*').order('name');
         serviceTypes = data || [];
     } catch {}
 
-    // Count services per category manually if join not supported or complex
-    // Or we can just return categories and handle count in UI or separate query.
-    // The previous mock had 'count'. Let's try to get it via count join or just ignore for now.
+    // Count services per category
+    const categoriesWithCount = await Promise.all(
+        (categories || []).map(async (cat: any) => {
+            try {
+                const { count } = await supabase
+                    .from('services')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('category', cat.slug);
+                return { ...cat, service_count: count || 0 };
+            } catch {
+                return { ...cat, service_count: 0 };
+            }
+        })
+    );
+
+    // Count services per type
+    const typesWithCount = await Promise.all(
+        serviceTypes.map(async (t: any) => {
+            try {
+                const { count } = await supabase
+                    .from('services')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('service_type', t.slug);
+                return { ...t, service_count: count || 0 };
+            } catch {
+                return { ...t, service_count: 0 };
+            }
+        })
+    );
 
     return {
         countries: countries || [],
         currencies: currencies || [],
-        categories: categories || [],
-        service_types: serviceTypes || []
+        categories: categoriesWithCount,
+        service_types: typesWithCount
     };
 }
 

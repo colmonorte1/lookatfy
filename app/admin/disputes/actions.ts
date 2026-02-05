@@ -2,6 +2,8 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { sendEmail } from '@/lib/email/brevo';
+import { disputeOpenedTemplate, disputeResolvedTemplate } from '@/lib/email/templates';
 
 // --- User/Expert Actions ---
 
@@ -56,6 +58,40 @@ export async function createDispute(data: {
         if (error.code === '23505') return { error: 'Ya existe una disputa para esta reserva.' };
         return { error: error.message };
     }
+
+    // Notify admins about new dispute (broadcast)
+    try {
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_SUPABASE_SERVICE_ROLE_KEY || '';
+        let writeClient = supabase;
+        if (serviceRoleKey) {
+            const { createServerClient } = await import('@supabase/ssr');
+            writeClient = createServerClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                serviceRoleKey,
+                { cookies: { getAll: () => [], setAll: () => { } } }
+            );
+        }
+        await writeClient.from('notifications').insert({
+            target_role: 'admin',
+            type: 'dispute_opened',
+            title: 'Nueva disputa abierta',
+            body: `Se abrió una disputa para la reserva ${data.booking_id}.`,
+            data: { booking_id: data.booking_id },
+            status: 'unread',
+            created_by: user.id,
+        });
+        // Send email to admins
+        const { data: admins } = await writeClient.from('profiles').select('email, full_name').eq('role', 'admin');
+        if (admins) {
+            const bookingDate = `${booking.date} ${booking.time || ''}`.trim();
+            for (const admin of admins) {
+                if (admin.email) {
+                    const html = disputeOpenedTemplate({ recipientName: admin.full_name || 'Admin', bookingDate, reason: data.reason, role: 'admin' });
+                    await sendEmail({ to: admin.email, subject: 'Nueva disputa abierta', html }).catch(() => {});
+                }
+            }
+        }
+    } catch {}
 
     revalidatePath('/user/bookings');
     revalidatePath('/expert/bookings');
@@ -217,6 +253,55 @@ export async function resolveDispute(
     }
 
     revalidatePath('/admin/disputes');
+
+    // Notify participants with resolution
+    try {
+        const { data: row } = await adminClient
+            .from('disputes')
+            .select('booking_id, resolution_notes')
+            .eq('id', disputeId)
+            .single();
+        if (row?.booking_id) {
+            const { data: booking } = await adminClient
+                .from('bookings')
+                .select('user_id, expert_id, date, time')
+                .eq('id', row.booking_id)
+                .single();
+            if (booking) {
+                await adminClient.from('notifications').insert([
+                    {
+                        recipient_user_id: booking.user_id,
+                        type: 'dispute_resolved',
+                        title: 'Tu disputa ha sido resuelta',
+                        body: String(resolution.resolution_notes || ''),
+                        data: { booking_id: row.booking_id },
+                        status: 'unread',
+                        created_by: user?.id || null,
+                    },
+                    {
+                        recipient_user_id: booking.expert_id,
+                        type: 'dispute_resolved',
+                        title: 'Disputa resuelta',
+                        body: String(resolution.resolution_notes || ''),
+                        data: { booking_id: row.booking_id },
+                        status: 'unread',
+                        created_by: user?.id || null,
+                    }
+                ]);
+                // Send dispute resolved emails
+                const { data: userProfile } = await adminClient.from('profiles').select('email, full_name').eq('id', booking.user_id).single();
+                const { data: expertProfile } = await adminClient.from('profiles').select('email, full_name').eq('id', booking.expert_id).single();
+                if (userProfile?.email) {
+                    const html = disputeResolvedTemplate({ recipientName: userProfile.full_name || 'Usuario', resolution: resolution.status, resolutionNotes: resolution.resolution_notes, role: 'user' });
+                    await sendEmail({ to: userProfile.email, subject: 'Tu disputa ha sido resuelta', html }).catch(() => {});
+                }
+                if (expertProfile?.email) {
+                    const html = disputeResolvedTemplate({ recipientName: expertProfile.full_name || 'Experto', resolution: resolution.status, resolutionNotes: resolution.resolution_notes, role: 'expert' });
+                    await sendEmail({ to: expertProfile.email, subject: 'Disputa resuelta', html }).catch(() => {});
+                }
+            }
+        }
+    } catch {}
     return { success: true };
 }
 

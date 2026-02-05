@@ -3,10 +3,10 @@
 import { Input } from '@/components/ui/Input/Input';
 import { Button } from '@/components/ui/Button/Button';
 import Link from 'next/link';
-import { Mail, Lock, User, Briefcase, ArrowLeft, Tag } from 'lucide-react';
+import { Mail, Lock, User, Briefcase, ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/utils/supabase/client';
+import { registerExpert } from '../../actions';
 
 export default function ExpertRegisterPage() {
     const [firstName, setFirstName] = useState('');
@@ -16,58 +16,85 @@ export default function ExpertRegisterPage() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [emailSent, setEmailSent] = useState(false);
     const router = useRouter();
+
+    const scorePassword = (p: string) => {
+        let s = 0;
+        if (p.length >= 8) s++;
+        if (/[A-Z]/.test(p)) s++;
+        if (/[0-9]/.test(p)) s++;
+        if (/[^A-Za-z0-9]/.test(p)) s++;
+        return s;
+    };
+    const strength = scorePassword(password);
+    const strengthLabel = strength <= 1 ? 'Débil' : strength === 2 ? 'Media' : strength === 3 ? 'Buena' : 'Alta';
+    const strengthColor = strength <= 1 ? 'rgb(var(--error))' : strength === 2 ? 'rgb(var(--warning))' : strength === 3 ? 'rgb(var(--primary))' : 'rgb(var(--success))';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
         setError(null);
 
+        if (password.length < 8) {
+            setError('La contraseña debe tener al menos 8 caracteres.');
+            setIsLoading(false);
+            return;
+        }
+
+        if (strength < 2) {
+            setError('La contraseña es muy débil. Incluye mayúsculas, números o caracteres especiales.');
+            setIsLoading(false);
+            return;
+        }
+
         try {
-            const supabase = createClient();
-            const fullName = `${firstName} ${lastName}`.trim();
+            const result = await registerExpert({ firstName, lastName, title, email, password });
 
-            // 1. Sign Up
-            const { data, error: signUpError } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: {
-                        full_name: fullName,
-                        role: 'expert',
-                        title: title // Backup in metadata
-                    }
-                }
-            });
-
-            if (signUpError) throw signUpError;
-
-            // 2. If we have a session (auto-confirm enabled), create Expert record
-            if (data.session) {
-                const { error: expertError } = await supabase
-                    .from('experts')
-                    .insert({
-                        id: data.user?.id,
-                        title: title,
-                        bio: '', // Empty for now
-                        consultation_price: 0
-                    });
-
-                if (expertError) {
-                    console.error('Error creating expert record:', expertError);
-                    // Continue anyway, user can fix in profile
-                }
+            if (!result.success) {
+                setError(result.error || 'Error al registrarse');
+                return;
             }
 
-            router.push('/expert/profile');
-
-        } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            setError(msg || 'Error al registrarse');
+            if (result.needsEmailConfirmation) {
+                setEmailSent(true);
+            } else {
+                router.push('/expert');
+            }
+        } catch {
+            setError('Error inesperado al registrarse. Intenta de nuevo.');
         } finally {
             setIsLoading(false);
         }
     };
+
+    if (emailSent) {
+        return (
+            <div style={{ maxWidth: '500px', margin: '0 auto', textAlign: 'center' }}>
+                <div style={{
+                    width: '60px',
+                    height: '60px',
+                    background: 'rgba(var(--success), 0.1)',
+                    color: 'rgb(var(--success))',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 1.5rem',
+                }}>
+                    <Mail size={30} />
+                </div>
+                <h1 style={{ fontSize: '1.75rem', marginBottom: '1rem' }}>Revisa tu correo</h1>
+                <p style={{ color: 'rgb(var(--text-secondary))', marginBottom: '2rem', lineHeight: 1.6 }}>
+                    Hemos enviado un enlace de confirmación a <strong>{email}</strong>.
+                    Revisa tu bandeja de entrada (y spam) para activar tu cuenta.
+                </p>
+                <Link href="/login" style={{ color: 'rgb(var(--primary))', fontWeight: 600 }}>
+                    Ir al Login
+                </Link>
+            </div>
+        );
+    }
 
     return (
         <div style={{ maxWidth: '500px', margin: '0 auto' }}>
@@ -132,15 +159,28 @@ export default function ExpertRegisterPage() {
                     onChange={(e) => setEmail(e.target.value)}
                 />
 
-                <Input
-                    label="Contraseña"
-                    type="password"
-                    placeholder="Crea una contraseña segura"
-                    icon={<Lock size={18} />}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <Input
+                        label="Contraseña"
+                        type="password"
+                        placeholder="Crea una contraseña segura"
+                        icon={<Lock size={18} />}
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                    />
+                    {password.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <div style={{ height: '8px', background: 'rgb(var(--border))', borderRadius: '999px', width: '120px', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${(strength / 4) * 100}%`, background: strengthColor, transition: 'width 0.3s' }} />
+                            </div>
+                            <span style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>Fortaleza: {strengthLabel}</span>
+                        </div>
+                    )}
+                    <p style={{ fontSize: '0.75rem', color: 'rgb(var(--text-muted))' }}>
+                        Mínimo 8 caracteres. Usa mayúsculas, números y símbolos para mayor seguridad.
+                    </p>
+                </div>
 
                 <Button
                     type="submit"
