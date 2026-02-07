@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Star, Clock, MapPin, CheckCircle, Calendar, CreditCard, ChevronLeft, ChevronRight, ShieldCheck, Video, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
@@ -8,6 +8,7 @@ import styles from './ServiceDetailClient.module.css';
 import Link from 'next/link';
 import { ReviewsList } from '@/components/ui/Reviews/ReviewsList';
 import { BookingCalendar } from '@/components/ui/Calendar/BookingCalendar';
+import { createClient } from '@/utils/supabase/client';
 
 interface ServiceDetailProps {
     service: {
@@ -56,7 +57,18 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
     const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
     const router = useRouter();
+
+    // Check authentication status on mount
+    useEffect(() => {
+        const checkAuth = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            setIsAuthenticated(!!user);
+        };
+        checkAuth();
+    }, []);
     const formatAmount = (cur: string, amount: number) => {
         if (cur === 'COP') {
             return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Math.round(amount));
@@ -87,8 +99,26 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
     // ...
 
 
+    const handleCalendarOpen = () => {
+        // Check if user is authenticated before opening calendar
+        if (isAuthenticated === false) {
+            // Store the current URL to redirect back after login
+            const currentUrl = window.location.pathname;
+            router.push(`/login?next=${encodeURIComponent(currentUrl)}`);
+            return;
+        }
+        setIsCalendarOpen(true);
+    };
+
     const handleBooking = () => {
         if (!selectedDate || !selectedTime) return;
+
+        // Check authentication before proceeding
+        if (isAuthenticated === false) {
+            const currentUrl = window.location.pathname;
+            router.push(`/login?next=${encodeURIComponent(currentUrl)}`);
+            return;
+        }
 
         const formattedDate = selectedDateStr || (() => {
             const y = new Date().getFullYear();
@@ -100,6 +130,7 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
         try {
             const intent = {
                 title: service.title || '',
+                price: Number(service.price) || 0,
                 currency: service.currency || 'USD',
                 image: service.image_url || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1200&q=80',
                 serviceId: String(service.id),
@@ -349,16 +380,17 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                             <Button
                                 fullWidth
                                 variant="outline"
-                                onClick={() => setIsCalendarOpen(true)}
+                                onClick={handleCalendarOpen}
+                                disabled={isAuthenticated === null}
                                 style={{ justifyContent: 'space-between', padding: '1rem', height: 'auto' }}
                             >
                                 <div style={{ textAlign: 'left' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, marginBottom: '0.25rem' }}>
                                         <Calendar size={18} />
-                                        {selectedDate ? `Día ${selectedDate}` : 'Ver disponibilidad'}
+                                        {selectedDate ? `Día ${selectedDate}` : (isAuthenticated === false ? 'Inicia sesión para ver disponibilidad' : 'Ver disponibilidad')}
                                     </div>
                                     <div style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))' }}>
-                                        {selectedTime ? selectedTime : 'Selecciona fecha y hora'}
+                                        {selectedTime ? selectedTime : (isAuthenticated === false ? 'Debes estar registrado' : 'Selecciona fecha y hora')}
                                     </div>
                                 </div>
                                 <ChevronRight size={16} />
@@ -368,11 +400,15 @@ export default function ServiceDetailClient({ service, expert, reviews = [] }: S
                         <Button
                             fullWidth
                             size="lg"
-                            disabled={!selectedDate || !selectedTime}
+                            disabled={!selectedDate || !selectedTime || isAuthenticated === null}
                             onClick={handleBooking}
                             style={{ marginTop: '1rem', fontSize: '1rem' }}
                         >
-                            {selectedDate && selectedTime ? 'Confirmar Reserva' : 'Selecciona fecha y hora'}
+                            {!isAuthenticated && isAuthenticated !== null
+                                ? 'Inicia sesión para reservar'
+                                : selectedDate && selectedTime
+                                    ? 'Confirmar Reserva'
+                                    : 'Selecciona fecha y hora'}
                         </Button>
 
                         <div style={{ marginTop: '1rem', textAlign: 'center', fontSize: '0.8rem', color: 'rgb(var(--text-secondary))', display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>

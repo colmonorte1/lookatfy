@@ -3,6 +3,8 @@ import { Calendar, Clock, Video, Search, ChevronRight, TrendingUp, CheckCircle, 
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
+import ProfileCompletionAlert from '@/components/ProfileCompletionAlert';
+import { calculateUserProfileCompletion } from '@/utils/profileCompletion';
 
 // Format date to readable format: "Lun 10 Feb 2026"
 const formatDate = (dateStr: string) => {
@@ -29,7 +31,18 @@ export default async function UserDashboard() {
 
     const userName = profile?.full_name?.split(' ')[0] || 'Usuario';
 
-    // 3. Calculate statistics
+    // 3. Calculate profile completion
+    const profileCompletion = calculateUserProfileCompletion({
+        avatar_url: profile?.avatar_url,
+        first_name: profile?.first_name,
+        last_name: profile?.last_name,
+        phone: profile?.phone,
+        city: profile?.city,
+        country: profile?.country,
+        timezone: profile?.timezone,
+    });
+
+    // 4. Calculate statistics
     const { data: allBookings } = await supabase
         .from('bookings')
         .select('id, status, price, currency')
@@ -39,7 +52,7 @@ export default async function UserDashboard() {
     const completedBookings = allBookings?.filter(b => b.status === 'completed').length || 0;
     const upcomingCount = allBookings?.filter(b => b.status === 'confirmed' || b.status === 'pending').length || 0;
 
-    // 4. Fetch upcoming bookings (no JOINs to avoid RLS issues)
+    // 5. Fetch upcoming bookings (no JOINs to avoid RLS issues)
     const { data: upcomingBookings } = await supabase
         .from('bookings')
         .select('*')
@@ -51,7 +64,7 @@ export default async function UserDashboard() {
 
     const upcomingList = upcomingBookings || [];
 
-    // 5. Fetch related services and experts separately
+    // 6. Fetch related services and experts separately
     const serviceIds = [...new Set(upcomingList.map(b => b.service_id).filter(Boolean))];
     const expertIds = [...new Set(upcomingList.map(b => b.expert_id).filter(Boolean))];
 
@@ -78,7 +91,7 @@ export default async function UserDashboard() {
         });
     }
 
-    // 6. Build enriched upcoming list
+    // 7. Build enriched upcoming list
     const enrichedUpcoming = upcomingList.map(b => ({
         ...b,
         services: servicesMap[b.service_id] || null,
@@ -94,7 +107,7 @@ export default async function UserDashboard() {
         return !Number.isNaN(t) && t >= now;
     });
 
-    // 7. Fetch history bookings (no JOINs)
+    // 8. Fetch history bookings (no JOINs)
     const { data: historyBookings } = await supabase
         .from('bookings')
         .select('*')
@@ -106,7 +119,7 @@ export default async function UserDashboard() {
 
     const historyList = historyBookings || [];
 
-    // 8. Fetch services for history
+    // 9. Fetch services for history
     const historyServiceIds = [...new Set(historyList.map(b => b.service_id).filter(Boolean))];
     let historyServicesMap: Record<string, { title?: string }> = {};
 
@@ -120,7 +133,7 @@ export default async function UserDashboard() {
         });
     }
 
-    // 9. Build enriched history and filter past bookings
+    // 10. Build enriched history and filter past bookings
     const enrichedHistory = historyList.map(b => ({
         ...b,
         services: historyServicesMap[b.service_id] || null
@@ -151,6 +164,14 @@ export default async function UserDashboard() {
                         : 'Te damos la bienvenida de nuevo. No tienes sesiones próximas.'}
                 </p>
             </div>
+
+            {/* Profile Completion Alert */}
+            <ProfileCompletionAlert
+                percentage={profileCompletion.percentage}
+                missingFields={profileCompletion.missingFields}
+                profileUrl="/user/profile"
+                userType="user"
+            />
 
             {/* Statistics Dashboard */}
             <div style={{

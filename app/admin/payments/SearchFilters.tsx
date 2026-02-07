@@ -99,8 +99,10 @@ export default function SearchFilters() {
                     }}
                 >
                     <option value="all">Todos los estados</option>
-                    <option value="completed">Completadas</option>
+                    <option value="pending">Pendientes</option>
                     <option value="confirmed">Confirmadas</option>
+                    <option value="completed">Completadas</option>
+                    <option value="cancelled">Canceladas</option>
                     <option value="disputed">En disputa</option>
                 </select>
 

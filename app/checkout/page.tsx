@@ -62,7 +62,7 @@ function CheckoutContent() {
     const [validatedCurrency, setValidatedCurrency] = useState<string | null>(null);
     const [priceValidationError, setPriceValidationError] = useState<string | null>(null);
 
-    const [intent, setIntent] = useState<{ title?: string; currency?: string; image?: string; serviceId?: string; expertId?: string; date?: string; time?: string } | null>(null);
+    const [intent, setIntent] = useState<{ title?: string; price?: number; currency?: string; image?: string; serviceId?: string; expertId?: string; date?: string; time?: string } | null>(null);
     useEffect(() => {
         try {
             const raw = sessionStorage.getItem('checkout_intent');
@@ -72,7 +72,7 @@ function CheckoutContent() {
 
     const serviceTitle = (intent?.title ?? searchParams.get('title')) || 'Servicio Profesional';
     const expertName = searchParams.get('expert') || 'Experto Lookatfy';
-    const price = parseFloat(searchParams.get('price') || '0');
+    const price = intent?.price ?? parseFloat(searchParams.get('price') || '0');
     const date = (intent?.date ?? searchParams.get('date')) || '';
     const time = (intent?.time ?? searchParams.get('time')) || '';
     const currency = (intent?.currency ?? searchParams.get('currency')) || 'USD';
@@ -276,8 +276,8 @@ function CheckoutContent() {
             const mm = Number(time.slice(3, 5));
             const startAtUTC = buildLocalDate(y, m, d, hh, mm, expertTz);
 
-            // Establecer expiración para booking pending (1 hora desde ahora)
-            const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+            // Establecer expiración para booking pending (20 minutos desde ahora)
+            const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
 
             const { data: bookingRow, error: bookingError } = await supabase
                 .from('bookings')

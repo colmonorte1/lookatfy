@@ -100,7 +100,7 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                         .from('bookings')
                         .update({ status: 'completed' })
                         .eq('id', bookingId);
-                } catch {}
+                } catch { }
             }
         };
         markCompleted();
@@ -119,7 +119,7 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                     .eq('reviewer_id', user.id)
                     .limit(1);
                 if (data && data.length > 0) setHasReview(true);
-            } catch {}
+            } catch { }
         };
         checkReview();
     }, [bookingId]);
@@ -135,7 +135,7 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                     .eq('booking_id', bookingId)
                     .limit(1);
                 if (data && data.length > 0) setExistingDispute(data[0] as SimpleDispute);
-            } catch {}
+            } catch { }
         };
         checkDispute();
     }, [bookingId, existingDispute]);
@@ -183,7 +183,7 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                     if (!upErr) attachments.push(path);
                 }
             }
-        } catch {}
+        } catch { }
 
         const { createDispute } = await import('@/app/admin/disputes/actions');
         const res = await createDispute({
@@ -228,7 +228,7 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                     style={{ fontSize: '0.8rem', color: 'rgb(var(--text-secondary))', textDecoration: 'underline' }}
                     onClick={() => !disabledReport && setDisputeModalOpen(true)}
                     disabled={disabledReport}
-                    >
+                >
                     Reportar un problema
                 </Button>
                 {disabledReport && (
@@ -319,12 +319,11 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                                 style={{
                                     background: 'rgb(var(--surface))',
                                     border: '1px solid rgb(var(--border))',
-                                    borderLeft: `4px solid ${
-                                        toast.type === 'success' ? 'rgb(var(--success))' :
-                                        toast.type === 'error' ? 'rgb(var(--error))' :
-                                        toast.type === 'warning' ? 'rgb(var(--warning))' :
-                                        'rgb(var(--primary))'
-                                    }`,
+                                    borderLeft: `4px solid ${toast.type === 'success' ? 'rgb(var(--success))' :
+                                            toast.type === 'error' ? 'rgb(var(--error))' :
+                                                toast.type === 'warning' ? 'rgb(var(--warning))' :
+                                                    'rgb(var(--primary))'
+                                        }`,
                                     boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
                                     borderRadius: '8px',
                                     padding: '0.875rem 1rem',
@@ -380,6 +379,23 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
+            {status === 'pending' && (
+                <div style={{
+                    background: 'rgba(var(--warning), 0.1)',
+                    border: '1px solid rgba(var(--warning), 0.3)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '1rem',
+                    textAlign: 'center'
+                }}>
+                    <div style={{ color: 'rgb(var(--warning))', fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                        ⏳ Procesando pago
+                    </div>
+                    <div style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.85rem' }}>
+                        Tu reserva se confirmará cuando se procese el pago. Si no se confirma en 20 minutos, se cancelará automáticamente.
+                    </div>
+                </div>
+            )}
+
             {status === 'confirmed' && meetingUrl && (
                 <div style={{ width: '100%' }}>
                     {isJoinable && (remaining === null || remaining > 0) ? (
@@ -415,8 +431,10 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                         </div>
                     )}
                     {remaining !== null && remaining > 0 && remaining <= 600 && (
-                        <div style={{ marginTop: '0.25rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 600,
-                            color: 'rgb(var(--warning))' }}>
+                        <div style={{
+                            marginTop: '0.25rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 600,
+                            color: 'rgb(var(--warning))'
+                        }}>
                             Sesión por expirar (~10 min)
                         </div>
                     )}
@@ -430,17 +448,30 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                 </div>
             )}
 
-            {(!remaining || remaining > 0) && (
-                <Button
-                    variant="outline"
-                    fullWidth
-                    style={{ color: 'rgb(var(--error))', borderColor: 'rgb(var(--error))' }}
-                    onClick={() => setCancelModalOpen(true)}
-                    disabled={loading}
-                >
-                    <XCircle size={16} style={{ marginRight: '0.5rem' }} />
-                    {loading ? 'Cancelando...' : 'Cancelar Reserva'}
-                </Button>
+            {(!remaining || remaining > 0) && status !== 'pending' && status !== 'cancelled' && status !== 'completed' && (
+                <>
+                    {(() => {
+                        const nowMs = Date.now();
+                        const startMs = meetingDate ? meetingDate.getTime() : 0;
+                        const diffMins = (startMs - nowMs) / 1000 / 60;
+                        const canCancel = diffMins > 20;
+
+                        if (!canCancel) return null;
+
+                        return (
+                            <Button
+                                variant="outline"
+                                fullWidth
+                                style={{ color: 'rgb(var(--error))', borderColor: 'rgb(var(--error))' }}
+                                onClick={() => setCancelModalOpen(true)}
+                                disabled={loading}
+                            >
+                                <XCircle size={16} style={{ marginRight: '0.5rem' }} />
+                                {loading ? 'Cancelando...' : 'Cancelar Reserva'}
+                            </Button>
+                        );
+                    })()}
+                </>
             )}
 
             {/* Simple Modal Implementation */}
@@ -516,12 +547,11 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                             style={{
                                 background: 'rgb(var(--surface))',
                                 border: '1px solid rgb(var(--border))',
-                                borderLeft: `4px solid ${
-                                    toast.type === 'success' ? 'rgb(var(--success))' :
-                                    toast.type === 'error' ? 'rgb(var(--error))' :
-                                    toast.type === 'warning' ? 'rgb(var(--warning))' :
-                                    'rgb(var(--primary))'
-                                }`,
+                                borderLeft: `4px solid ${toast.type === 'success' ? 'rgb(var(--success))' :
+                                        toast.type === 'error' ? 'rgb(var(--error))' :
+                                            toast.type === 'warning' ? 'rgb(var(--warning))' :
+                                                'rgb(var(--primary))'
+                                    }`,
                                 boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
                                 borderRadius: '8px',
                                 padding: '0.875rem 1rem',

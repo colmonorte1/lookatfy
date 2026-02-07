@@ -3,6 +3,8 @@ import { createClient } from '@/utils/supabase/server';
 import type { ComponentType } from 'react';
 import Link from 'next/link';
 import { ExpertSidebar } from '@/components/expert/ExpertSidebar';
+import ProfileCompletionAlert from '@/components/ProfileCompletionAlert';
+import { calculateExpertProfileCompletion } from '@/utils/profileCompletion';
 
 interface KPICardProps {
     title: string;
@@ -62,8 +64,16 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
     }
 
     // 2. Fetch Profile & Expert Data
-    const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single();
-    const { data: expert } = await supabase.from('experts').select('rating, reviews_count').eq('id', user.id).single();
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, first_name, last_name, avatar_url')
+        .eq('id', user.id)
+        .single();
+    const { data: expert } = await supabase
+        .from('experts')
+        .select('rating, reviews_count, title, bio, phone, city, country, timezone, languages, skills')
+        .eq('id', user.id)
+        .single();
     const { count: servicesCount } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('expert_id', user.id).eq('status', 'active');
     const { data: settingsData } = await supabase
         .from('platform_settings')
@@ -78,7 +88,10 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
 
     // Parallelize queries for efficiency? Or one big query?
     // Let's get "Active" bookings for upcoming
-    const today = new Date().toISOString().split('T')[0];
+    // We use a safe margin (yesterday) to ensure we don't miss bookings due to timezone differences
+    const today = new Date();
+    today.setDate(today.getDate() - 1);
+    const safeDate = today.toISOString().split('T')[0];
 
     const { data: upcomingBookings } = await supabase
         .from('bookings')
@@ -88,7 +101,7 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
         `)
         .eq('expert_id', user.id)
         .eq('status', 'confirmed')
-        .gte('date', today)
+        .gte('date', safeDate)
         .order('date', { ascending: true })
         .order('time', { ascending: true })
         .limit(3);
@@ -159,6 +172,16 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
 
     const firstName = profile?.full_name?.split(' ')[0] || 'Experto';
 
+    // 4. Calculate profile completion
+    const profileCompletion = calculateExpertProfileCompletion(
+        {
+            avatar_url: profile?.avatar_url,
+            first_name: profile?.first_name,
+            last_name: profile?.last_name,
+        },
+        expert
+    );
+
     return (
         <div className="container" style={{ display: 'grid', gap: '2rem', padding: '2rem 1rem 4rem' }}>
             <div>
@@ -177,6 +200,15 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
                     <h1 style={{ fontSize: '2rem' }}>Hola, {firstName} 👋</h1>
                     <p style={{ color: 'rgb(var(--text-secondary))' }}>Resumen de tu actividad</p>
                 </div>
+
+                {/* Profile Completion Alert */}
+                <ProfileCompletionAlert
+                    percentage={profileCompletion.percentage}
+                    missingFields={profileCompletion.missingFields}
+                    profileUrl="/expert/profile"
+                    userType="expert"
+                />
+
                 <form method="get" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '1rem' }} aria-label="Filtro por rango de fechas">
                     <label htmlFor="from" style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))' }}>Desde</label>
                     <input id="from" name="from" type="date" defaultValue={fromValid ? String(from) : ''} style={{ padding: '0.5rem', border: '1px solid rgb(var(--border))', borderRadius: '6px', background: 'rgb(var(--surface))' }} />
@@ -187,7 +219,7 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
                 </form>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
                     <KPICard title={hasRange ? "Ingresos (rango)" : "Ingresos este mes"} value={`$${rangeRevenue.toFixed(2)}`} subtext={hasRange ? "Reservas completadas en rango" : "Reservas completadas"} icon={DollarSign} color="success" />
-                    <KPICard title={hasRange ? "Ingresos netos (rango)" : "Ingresos netos este mes"} value={`$${netRangeRevenue.toFixed(2)}`} subtext={`Después de comisión (${Math.round(commissionRate*100)}%)`} icon={DollarSign} color="success" />
+                    <KPICard title={hasRange ? "Ingresos netos (rango)" : "Ingresos netos este mes"} value={`$${netRangeRevenue.toFixed(2)}`} subtext={`Después de comisión (${Math.round(commissionRate * 100)}%)`} icon={DollarSign} color="success" />
                     <KPICard title="Próximas Reservas" value={upcomingCount} subtext="Citas confirmadas" icon={Calendar} color="primary" />
                     <KPICard title="Horas Realizadas" value={`${totalHours}h`} subtext="Total acumulado" icon={Clock} color="secondary" />
                     <KPICard title="Calificación" value={expert?.rating || '5.0'} subtext={`Base en ${expert?.reviews_count || 0} reseña(s)`} icon={Star} color="warning" />
