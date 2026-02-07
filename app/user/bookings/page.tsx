@@ -9,11 +9,11 @@ import { LocalTime } from '@/components/user/LocalTime';
 
 const getStatusColor = (status: string) => {
     switch (status) {
-        case 'confirmed': return { bg: 'rgba(var(--success), 0.1)', text: 'rgb(var(--success))', label: 'Confirmada', icon: CheckCircle };
-        case 'pending': return { bg: 'rgba(var(--warning), 0.1)', text: 'rgb(var(--warning))', label: 'Pendiente', icon: Clock };
-        case 'completed': return { bg: 'rgba(var(--primary), 0.1)', text: 'rgb(var(--primary))', label: 'Completada', icon: CheckCircle };
-        case 'cancelled': return { bg: 'rgba(var(--error), 0.1)', text: 'rgb(var(--error))', label: 'Cancelada', icon: XCircle };
-        default: return { bg: 'rgb(var(--surface-hover))', text: 'rgb(var(--text-secondary))', label: status, icon: Clock };
+        case 'confirmed': return { bg: 'rgba(var(--success), 0.1)', text: 'rgb(var(--success))', label: '✅ Confirmada', icon: CheckCircle, description: 'Tu pago ha sido confirmado. Podrás acceder a la reunión cuando llegue la hora.' };
+        case 'pending': return { bg: 'rgba(var(--warning), 0.1)', text: 'rgb(var(--warning))', label: '⏳ Procesando pago', icon: Clock, description: 'Estamos procesando tu pago. Esto puede tardar unos minutos.' };
+        case 'completed': return { bg: 'rgba(var(--primary), 0.1)', text: 'rgb(var(--primary))', label: '✅ Completada', icon: CheckCircle, description: 'Esta sesión ha finalizado.' };
+        case 'cancelled': return { bg: 'rgba(var(--error), 0.1)', text: 'rgb(var(--error))', label: '❌ Cancelada', icon: XCircle, description: 'Esta reserva fue cancelada.' };
+        default: return { bg: 'rgb(var(--surface-hover))', text: 'rgb(var(--text-secondary))', label: status, icon: Clock, description: '' };
     }
 };
 
@@ -211,9 +211,23 @@ export default async function UserBookingsPage({ searchParams }: { searchParams:
                                                     <StatusIcon size={12} /> {statusInfo.label}
                                                 </span>
                                             </div>
-                                            <div style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                                            <div style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
                                                 con <span style={{ color: 'rgb(var(--text-main))', fontWeight: 500 }}>{expertName}</span> ({expertRole})
                                             </div>
+
+                                            {statusInfo.description && (
+                                                <div style={{
+                                                    background: statusInfo.bg,
+                                                    color: statusInfo.text,
+                                                    padding: '0.5rem 0.75rem',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    fontSize: '0.85rem',
+                                                    marginBottom: '0.5rem',
+                                                    fontStyle: 'italic'
+                                                }}>
+                                                    {statusInfo.description}
+                                                </div>
+                                            )}
 
                                             <div style={{ display: 'flex', gap: '1rem', color: 'rgb(var(--text-secondary))', fontSize: '0.85rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                                                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>

@@ -6,6 +6,7 @@ import { Search, MapPin, Tag, Star } from 'lucide-react';
 import { Button } from '@/components/ui/Button/Button';
 import Link from 'next/link';
 import Image from 'next/image';
+import styles from './ServicesGrid.module.css';
 
 interface Service {
     id: string;
@@ -71,7 +72,7 @@ export default function ServicesGrid({ services, categories = [], countries = []
 
     return (
         <>
-            {/* Search Bar Section - Moved inside here to control state */}
+            {/* Search Bar Section */}
             <section style={{
                 background: 'linear-gradient(135deg, rgb(var(--surface)) 0%, rgba(var(--primary), 0.1) 100%)',
                 padding: '6rem 1rem 4rem',
@@ -98,51 +99,25 @@ export default function ServicesGrid({ services, categories = [], countries = []
                         Conecta por video al instante para recibir asesoría, resolver dudas o aprender nuevas habilidades.
                     </p>
 
-                    <div style={{
-                        background: 'white',
-                        padding: '1rem',
-                        borderRadius: 'var(--radius-full)',
-                        boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
-                        display: 'flex',
-                        gap: '0.5rem',
-                        flexWrap: 'wrap',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        border: '1px solid rgb(var(--border))'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, paddingLeft: '1rem', minWidth: '200px' }}>
+                    <div className={styles.searchContainer}>
+                        <div className={styles.searchWrapper}>
                             <Search size={20} color="rgb(var(--text-muted))" />
                             <input
                                 type="text"
                                 placeholder="¿Qué servicio buscas? (ej. Yoga, Abogado...)"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                style={{
-                                    border: 'none',
-                                    outline: 'none',
-                                    fontSize: '1rem',
-                                    width: '100%',
-                                    color: 'rgb(var(--text-main))'
-                                }}
+                                className={styles.searchInput}
                             />
                         </div>
 
-                        <div style={{ height: '30px', width: '1px', background: 'rgb(var(--border))', display: 'none' }} className="desktop-only" />
+                        <div className={styles.divider} />
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div className={styles.filtersWrapper}>
                             <select
                                 value={categoryFilter}
                                 onChange={(e) => setCategoryFilter(e.target.value)}
-                                style={{
-                                    padding: '0.5rem',
-                                    borderRadius: 'var(--radius-md)',
-                                    border: 'none',
-                                    background: 'rgb(var(--surface-hover))',
-                                    fontSize: '0.9rem',
-                                    fontWeight: 500,
-                                    color: 'rgb(var(--text-secondary))',
-                                    cursor: 'pointer'
-                                }}
+                                className={styles.select}
                             >
                                 {['Todas', ...categories].map(cat => <option key={cat} value={cat}>{cat}</option>)}
                             </select>
@@ -150,28 +125,22 @@ export default function ServicesGrid({ services, categories = [], countries = []
                             <select
                                 value={countryFilter}
                                 onChange={(e) => setCountryFilter(e.target.value)}
-                                style={{
-                                    padding: '0.5rem',
-                                    borderRadius: 'var(--radius-md)',
-                                    border: 'none',
-                                    background: 'rgb(var(--surface-hover))',
-                                    fontSize: '0.9rem',
-                                    fontWeight: 500,
-                                    color: 'rgb(var(--text-secondary))',
-                                    cursor: 'pointer'
-                                }}
+                                className={styles.select}
                             >
                                 {['Todos', ...countries].map(country => <option key={country} value={country}>{country}</option>)}
                             </select>
 
-                            <Button onClick={() => {
-                                const params = new URLSearchParams();
-                                if (searchTerm.trim()) params.set('q', searchTerm.trim());
-                                if (categoryFilter && categoryFilter !== 'Todas') params.set('category', categoryFilter);
-                                if (countryFilter && countryFilter !== 'Todos') params.set('country', countryFilter);
-                                const qs = params.toString();
-                                router.push(qs ? `/services/search?${qs}` : '/services/search');
-                            }}>
+                            <Button
+                                onClick={() => {
+                                    const params = new URLSearchParams();
+                                    if (searchTerm.trim()) params.set('q', searchTerm.trim());
+                                    if (categoryFilter && categoryFilter !== 'Todas') params.set('category', categoryFilter);
+                                    if (countryFilter && countryFilter !== 'Todos') params.set('country', countryFilter);
+                                    const qs = params.toString();
+                                    router.push(qs ? `/services/search?${qs}` : '/services/search');
+                                }}
+                                className={styles.searchButton}
+                            >
                                 Buscar
                             </Button>
                         </div>

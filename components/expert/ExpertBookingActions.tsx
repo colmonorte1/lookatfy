@@ -78,6 +78,25 @@ export default function ExpertBookingActions({ bookingId, status, meetingUrl, da
     return null;
   }
 
+  if (status === 'pending') {
+    return (
+      <div style={{
+        background: 'rgba(var(--warning), 0.1)',
+        border: '1px solid rgba(var(--warning), 0.3)',
+        borderRadius: 'var(--radius-md)',
+        padding: '0.75rem',
+        textAlign: 'center'
+      }}>
+        <div style={{ color: 'rgb(var(--warning))', fontSize: '0.85rem', fontWeight: 600 }}>
+          ⏳ Pendiente de confirmación de pago
+        </div>
+        <div style={{ color: 'rgb(var(--text-secondary))', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+          Esta reserva se confirmará cuando se procese el pago del cliente.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
       {meetingUrl ? (

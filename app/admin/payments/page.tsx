@@ -66,7 +66,7 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
     let bookingsQuery = supabase
         .from('bookings')
         .select('*')
-        .in('status', ['confirmed', 'completed'])
+        .in('status', ['pending', 'confirmed', 'completed', 'cancelled'])
         .order('created_at', { ascending: false });
 
     if (dateFilter) {
@@ -91,17 +91,17 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
 
     // Fetch user profiles separately
     const userIds = [...new Set((allBookings || []).map(b => b.user_id).filter(Boolean))];
-    let usersMap: Record<string, { full_name?: string | null }> = {};
+    let usersMap: Record<string, { full_name?: string | null; email?: string | null }> = {};
 
     if (userIds.length > 0) {
         const { data: users } = await supabase
             .from('profiles')
-            .select('id, full_name')
+            .select('id, full_name, email')
             .in('id', userIds);
 
         if (users) {
             usersMap = users.reduce((acc: any, u: any) => {
-                acc[u.id] = { full_name: u.full_name };
+                acc[u.id] = { full_name: u.full_name, email: u.email };
                 return acc;
             }, {});
         }
@@ -125,7 +125,25 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
         }
     }
 
-    // Format transactions with user/expert names
+    // Fetch services separately
+    const serviceIds = [...new Set((allBookings || []).map(b => b.service_id).filter(Boolean))];
+    let servicesMap: Record<string, { title?: string | null }> = {};
+
+    if (serviceIds.length > 0) {
+        const { data: services } = await supabase
+            .from('services')
+            .select('id, title')
+            .in('id', serviceIds);
+
+        if (services) {
+            servicesMap = services.reduce((acc: any, s: any) => {
+                acc[s.id] = { title: s.title };
+                return acc;
+            }, {});
+        }
+    }
+
+    // Format transactions with user/expert names and additional data
     let transactions = (allBookings || []).map(t => ({
         id: t.id,
         date: t.created_at || t.date || new Date().toISOString(),
@@ -133,7 +151,11 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
         price: Number(t.price || 0),
         currency: t.currency || 'COP',
         userFullName: t.user_id ? usersMap[t.user_id]?.full_name : null,
+        userEmail: t.user_id ? usersMap[t.user_id]?.email : null,
         expertFullName: t.expert_id ? expertsMap[t.expert_id]?.full_name : null,
+        serviceName: t.service_id ? servicesMap[t.service_id]?.title : null,
+        bookingDate: t.date || null,
+        bookingTime: t.time || null,
         inDispute: disputedBookingIds.has(t.id)
     }));
 
