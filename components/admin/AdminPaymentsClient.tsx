@@ -428,7 +428,7 @@ export default function AdminPaymentsClient({
                                 Cancelar
                             </Button>
                             <Button
-                                variant={confirmDialog.action === 'approve' ? 'primary' : 'default'}
+                                variant={confirmDialog.action === 'approve' ? 'primary' : 'secondary'}
                                 onClick={() => {
                                     if (confirmDialog.action === 'approve') {
                                         handleApprove(confirmDialog.bookingId);
