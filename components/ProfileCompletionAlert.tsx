@@ -140,7 +140,7 @@ export default function ProfileCompletionAlert({
         <div className={styles.actions}>
           <Link href={profileUrl}>
             <Button
-              variant={isLowCompletion ? 'primary' : 'default'}  // Use default (usually primary in many systems) or primary
+              variant={isLowCompletion ? 'primary' : 'secondary'}
               size="sm"
             >
               {percentage === 100 ? 'Ver mi perfil' : 'Completar ahora'}
