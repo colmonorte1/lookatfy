@@ -358,9 +358,22 @@ function CheckoutContent() {
             const payment_method_payload = (() => {
                 if (paymentMethod === 'NEQUI') return { type: 'NEQUI', phone_number: normalizePhoneCOP(nequiPhone || formData.phone) };
                 if (paymentMethod === 'DAVIPLATA') return { type: 'DAVIPLATA', phone_number: normalizePhoneCOP(formData.phone), user_legal_id_type: daviplataDoc.type, user_legal_id: onlyDigits(daviplataDoc.number) };
-                if (paymentMethod === 'PSE') return { type: 'PSE', user_type: Number(pseInfo.user_type) || 0, user_phone: normalizePhoneCOP(pseInfo.user_phone || formData.phone), user_legal_id_type: pseInfo.user_legal_id_type, user_legal_id: onlyDigits(pseInfo.user_legal_id), user_email: formData.email, financial_institution_code: pseInfo.financial_institution_code, payment_description: pseInfo.payment_description || `Reserva ${serviceTitle}` };
+                if (paymentMethod === 'PSE') return {
+                    type: 'PSE',
+                    user_type: Number(pseInfo.user_type) || 0,
+                    financial_institution_code: pseInfo.financial_institution_code,
+                    payment_description: pseInfo.payment_description || `Reserva ${serviceTitle}`
+                };
                 return undefined;
             })();
+
+            const customer_data_payload = paymentMethod === 'PSE' ? {
+                phone_number: normalizePhoneCOP(pseInfo.user_phone || formData.phone),
+                legal_id: onlyDigits(pseInfo.user_legal_id),
+                legal_id_type: pseInfo.user_legal_id_type,
+                full_name: formData.name || undefined
+            } : undefined;
+
             if (paymentMethod === 'PSE') {
                 if (!pseInfo.user_legal_id || !formData.email || !pseInfo.financial_institution_code || !(pseInfo.payment_description || serviceTitle)) {
                     showToast('Para PSE debes ingresar documento, email, banco y descripción.', 'warning');
@@ -395,6 +408,7 @@ function CheckoutContent() {
                     customer_email: formData.email,
                     payment_method_type: paymentMethod,
                     payment_method_payload,
+                    customer_data: customer_data_payload,
                     original_amount: dbCurrency !== 'COP' ? total : undefined,
                     original_currency: dbCurrency !== 'COP' ? dbCurrency : undefined,
                     redirect_url: returnUrl

@@ -16,6 +16,7 @@ export async function POST(request: Request) {
       token,
       payment_method_type,
       payment_method_payload,
+      customer_data,
       original_amount,
       original_currency,
       redirect_url,
@@ -82,6 +83,7 @@ export async function POST(request: Request) {
         acceptanceToken,
         paymentMethodType: payment_method_type,
         paymentMethod: payment_method_payload,
+        customerData: customer_data,
         redirectUrl: redirect_url,
       })
     } catch (err: any) {

@@ -54,11 +54,8 @@ type PaymentMethodType = 'CARD' | 'PSE' | 'NEQUI' | 'DAVIPLATA' | 'PCOL'
 type PSEPaymentMethod = {
   type: 'PSE'
   user_type: 0 | 1
-  user_phone: string
-  user_legal_id_type: string
-  user_legal_id: string
-  user_email?: string
-  bank_code?: string
+  financial_institution_code: string
+  payment_description: string
 }
 type NequiPaymentMethod = { type: 'NEQUI'; phone_number: string }
 type DaviplataPaymentMethod = {
@@ -66,6 +63,12 @@ type DaviplataPaymentMethod = {
   phone_number: string
   user_legal_id_type: string
   user_legal_id: string
+}
+type CustomerData = {
+  phone_number: string
+  full_name?: string
+  legal_id: string
+  legal_id_type: string
 }
 
 export const createTransaction = async (input: {
@@ -77,6 +80,7 @@ export const createTransaction = async (input: {
   acceptanceToken: string
   paymentMethodType?: PaymentMethodType
   paymentMethod?: PSEPaymentMethod | NequiPaymentMethod | DaviplataPaymentMethod | Record<string, unknown>
+  customerData?: CustomerData
   redirectUrl?: string
 }) => {
   const url = `${getBaseUrl()}/transactions`
@@ -90,6 +94,7 @@ export const createTransaction = async (input: {
   if (input.paymentSourceId) body.payment_source_id = input.paymentSourceId
   if (input.paymentMethodType) body.payment_method_type = input.paymentMethodType
   if (input.paymentMethod) body.payment_method = input.paymentMethod
+  if (input.customerData) body.customer_data = input.customerData
   if (input.redirectUrl) body.redirect_url = input.redirectUrl
   // Generate integrity signature
   const integritySecret = process.env.WOMPI_INTEGRITY_SECRET
