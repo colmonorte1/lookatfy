@@ -48,12 +48,16 @@ function CheckoutContent() {
     });
 
     const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'PSE' | 'NEQUI' | 'DAVIPLATA'>('PSE');
+    const [cardInstallments, setCardInstallments] = useState<number>(1);
     const [daviplataDoc, setDaviplataDoc] = useState({ type: 'CC', number: '' });
     const [nequiPhone, setNequiPhone] = useState('');
     const [pseInfo, setPseInfo] = useState({ user_type: 0, user_phone: '', user_legal_id_type: 'CC', user_legal_id: '', financial_institution_code: '', payment_description: '' });
     const [pseBanks, setPseBanks] = useState<Array<{ code: string; name: string }>>([]);
     const [addons, setAddons] = useState<Array<{ id: string; name: string; price: number }>>([]);
     const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+    const [acceptPolicyChecked, setAcceptPolicyChecked] = useState(false);
+    const [acceptPersonalChecked, setAcceptPersonalChecked] = useState(false);
+    const [acceptLinks, setAcceptLinks] = useState<{ policy?: string; personal?: string }>({});
 
     const [loadingUser, setLoadingUser] = useState(true);
 
@@ -197,6 +201,23 @@ function CheckoutContent() {
     }, []);
 
     useEffect(() => {
+        const fetchAcceptance = async () => {
+            try {
+                const isProd = process.env.NODE_ENV === 'production';
+                const base = isProd ? 'https://api.wompi.co/v1' : 'https://sandbox.wompi.co/v1';
+                const pub = process.env.NEXT_PUBLIC_WOMPI_PUBLIC_KEY || '';
+                if (!pub) return;
+                const res = await fetch(`${base}/merchants/${pub}`, { cache: 'no-store' });
+                const data = await res.json();
+                const policy = String(data?.data?.presigned_acceptance?.permalink || '');
+                const personal = String(data?.data?.presigned_personal_data_auth?.permalink || '');
+                setAcceptLinks({ policy, personal });
+            } catch {}
+        };
+        fetchAcceptance();
+    }, []);
+
+    useEffect(() => {
         const refetchIfNeeded = async () => {
             if (paymentMethod === 'PSE' && pseBanks.length === 0) {
                 try {
@@ -215,6 +236,11 @@ function CheckoutContent() {
 
         if (!serviceId || !expertId || !date || !time) {
             showToast("Faltan datos de la reserva.", 'error');
+            return;
+        }
+
+        if (!acceptPolicyChecked || !acceptPersonalChecked) {
+            showToast("Debes aceptar los contratos para continuar.", 'warning');
             return;
         }
 
@@ -361,9 +387,12 @@ function CheckoutContent() {
                 if (paymentMethod === 'PSE') return {
                     type: 'PSE',
                     user_type: Number(pseInfo.user_type) || 0,
+                    user_legal_id_type: pseInfo.user_legal_id_type,
+                    user_legal_id: onlyDigits(pseInfo.user_legal_id),
                     financial_institution_code: pseInfo.financial_institution_code,
                     payment_description: pseInfo.payment_description || `Reserva ${serviceTitle}`
                 };
+                if (paymentMethod === 'CARD') return { type: 'CARD', installments: Number(cardInstallments) || 1 };
                 return undefined;
             })();
 
@@ -371,12 +400,12 @@ function CheckoutContent() {
                 phone_number: normalizePhoneCOP(pseInfo.user_phone || formData.phone),
                 legal_id: onlyDigits(pseInfo.user_legal_id),
                 legal_id_type: pseInfo.user_legal_id_type,
-                full_name: formData.name || undefined
+                full_name: `${formData.name} ${formData.surname}`.trim() || 'Usuario'
             } : undefined;
 
             if (paymentMethod === 'PSE') {
-                if (!pseInfo.user_legal_id || !formData.email || !pseInfo.financial_institution_code || !(pseInfo.payment_description || serviceTitle)) {
-                    showToast('Para PSE debes ingresar documento, email, banco y descripción.', 'warning');
+                if (!pseInfo.user_legal_id || !formData.email || !formData.name || !pseInfo.financial_institution_code || !(pseInfo.payment_description || serviceTitle)) {
+                    showToast('Para PSE debes ingresar nombre, documento, email, banco y descripción.', 'warning');
                     setIsProcessing(false);
                     return;
                 }
@@ -616,6 +645,42 @@ function CheckoutContent() {
                                     <option value="CARD" disabled>Tarjeta (próximamente)</option>
                                 </select>
                             </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <label style={{ display: 'block', fontWeight: 500 }}>Aceptaciones requeridas</label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <input type="checkbox" checked={acceptPolicyChecked} onChange={(e) => setAcceptPolicyChecked(e.target.checked)} />
+                                    <span>He leído y acepto</span>
+                                    {acceptLinks.policy ? (
+                                        <a href={acceptLinks.policy} target="_blank" rel="noopener noreferrer" style={{ color: 'rgb(var(--primary))' }}>Términos y condiciones</a>
+                                    ) : (
+                                        <span style={{ color: 'rgb(var(--text-secondary))' }}>Términos y condiciones</span>
+                                    )}
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <input type="checkbox" checked={acceptPersonalChecked} onChange={(e) => setAcceptPersonalChecked(e.target.checked)} />
+                                    <span>Autorizo el tratamiento de mis datos personales</span>
+                                    {acceptLinks.personal ? (
+                                        <a href={acceptLinks.personal} target="_blank" rel="noopener noreferrer" style={{ color: 'rgb(var(--primary))' }}>Autorización de datos</a>
+                                    ) : (
+                                        <span style={{ color: 'rgb(var(--text-secondary))' }}>Autorización de datos</span>
+                                    )}
+                                </label>
+                            </div>
+                            {paymentMethod === 'CARD' && (
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Cuotas</label>
+                                    <select
+                                        value={cardInstallments}
+                                        onChange={(e) => setCardInstallments(Number(e.target.value))}
+                                        className="form-input"
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid rgb(var(--border))', background: 'rgb(var(--surface-hover))', fontSize: '0.9rem' }}
+                                    >
+                                        {[1,2,3,4,5,6,12,24].map(n => (
+                                            <option key={n} value={n}>{n}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             {paymentMethod === 'DAVIPLATA' && (
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                     <input

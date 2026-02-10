@@ -20,10 +20,29 @@ export const getAcceptanceToken = async (publicKey: string) => {
   return data?.data?.presigned_acceptance?.acceptance_token as string
 }
 
+export const getAcceptanceTokens = async (publicKey: string) => {
+  const url = `${getBaseUrl()}/merchants/${publicKey}`
+  const res = await fetch(url, { cache: 'no-store' })
+  if (!res.ok) {
+    try {
+      const err = await res.json()
+      throw new Error(err?.error || 'Error obteniendo acceptance tokens')
+    } catch {
+      throw new Error('Error obteniendo acceptance tokens')
+    }
+  }
+  const data = await res.json()
+  const acceptanceToken = data?.data?.presigned_acceptance?.acceptance_token as string
+  const personalToken = data?.data?.presigned_personal_data_auth?.acceptance_token as string
+  return { acceptanceToken, acceptPersonalAuth: personalToken }
+}
+
 export const createPaymentSource = async (input: {
   type: 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'PSE' | 'PCOL'
   token: string
   customerEmail?: string
+  acceptanceToken?: string
+  acceptPersonalAuth?: string
 }) => {
   const url = `${getBaseUrl()}/payment_sources`
   const res = await fetch(url, {
@@ -36,6 +55,8 @@ export const createPaymentSource = async (input: {
       type: input.type,
       token: input.token,
       customer_email: input.customerEmail,
+      acceptance_token: input.acceptanceToken,
+      accept_personal_auth: input.acceptPersonalAuth,
     }),
   })
   if (!res.ok) {
@@ -54,6 +75,8 @@ type PaymentMethodType = 'CARD' | 'PSE' | 'NEQUI' | 'DAVIPLATA' | 'PCOL'
 type PSEPaymentMethod = {
   type: 'PSE'
   user_type: 0 | 1
+  user_legal_id_type: string
+  user_legal_id: string
   financial_institution_code: string
   payment_description: string
 }
@@ -78,6 +101,7 @@ export const createTransaction = async (input: {
   customerEmail: string
   paymentSourceId?: number
   acceptanceToken: string
+  acceptPersonalAuth?: string
   paymentMethodType?: PaymentMethodType
   paymentMethod?: PSEPaymentMethod | NequiPaymentMethod | DaviplataPaymentMethod | Record<string, unknown>
   customerData?: CustomerData
@@ -91,6 +115,7 @@ export const createTransaction = async (input: {
     reference: input.reference,
     acceptance_token: input.acceptanceToken,
   }
+  if (input.acceptPersonalAuth) (body as any).accept_personal_auth = input.acceptPersonalAuth
   if (input.paymentSourceId) body.payment_source_id = input.paymentSourceId
   if (input.paymentMethodType) body.payment_method_type = input.paymentMethodType
   if (input.paymentMethod) body.payment_method = input.paymentMethod
@@ -113,11 +138,13 @@ export const createTransaction = async (input: {
       throw new Error('Failed to generate payment signature')
     }
   }
+  const idempotencyKey = `ref-${input.reference}`
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${process.env.WOMPI_PRIVATE_KEY || ''}`,
+      'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify(body),
   })
