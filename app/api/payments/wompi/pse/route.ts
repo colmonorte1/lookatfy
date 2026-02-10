@@ -14,10 +14,8 @@ export async function GET() {
     // En sandbox, usar bancos de prueba específicos que funcionan
     if (!isProd) {
       const testBanks = [
-        { code: '1022', name: 'BANCO UNION COLOMBIANO' },
-        { code: '1040', name: 'BANCO AGRARIO' },
-        { code: '1507', name: 'NEQUI' },
-        { code: '1551', name: 'DAVIPLATA' },
+        { code: '1', name: 'Banco que aprueba' },
+        { code: '2', name: 'Banco que rechaza' },
       ]
       return NextResponse.json({ data: testBanks })
     }

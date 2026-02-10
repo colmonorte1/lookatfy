@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAcceptanceToken, createPaymentSource, createTransaction } from '@/lib/wompi'
+import { getAcceptanceTokens, createPaymentSource, createTransaction } from '@/lib/wompi'
 import { createServerClient } from '@supabase/ssr'
 
 export const runtime = 'nodejs'
@@ -57,8 +57,11 @@ export async function POST(request: Request) {
     }
 
     let acceptanceToken: string
+    let acceptPersonalAuth: string | undefined
     try {
-      acceptanceToken = await getAcceptanceToken(publicKey)
+      const tokens = await getAcceptanceTokens(publicKey)
+      acceptanceToken = tokens.acceptanceToken
+      acceptPersonalAuth = tokens.acceptPersonalAuth
     } catch (e: any) {
       return NextResponse.json({ error: e?.message || 'Error obteniendo acceptance token' }, { status: 400 })
     }
@@ -69,6 +72,8 @@ export async function POST(request: Request) {
         type,
         token,
         customerEmail: customer_email,
+        acceptanceToken,
+        acceptPersonalAuth,
       })
     }
 
@@ -81,6 +86,7 @@ export async function POST(request: Request) {
         customerEmail: customer_email,
         paymentSourceId,
         acceptanceToken,
+        acceptPersonalAuth,
         paymentMethodType: payment_method_type,
         paymentMethod: payment_method_payload,
         customerData: customer_data,
