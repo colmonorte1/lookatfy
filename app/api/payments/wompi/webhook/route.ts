@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     const ok = verifyWebhookSignature(raw, checksum || undefined)
     if (!ok) return NextResponse.json({ error: 'Firma inválida' }, { status: 400 })
     const payload = JSON.parse(raw)
-    const tx = payload?.event?.data?.transaction
+    const tx = payload?.data?.transaction
     const reference = tx?.reference as string | undefined
     const status = tx?.status as string | undefined
     if (!reference || !status) return NextResponse.json({ error: 'Evento inválido' }, { status: 400 })

@@ -205,12 +205,24 @@ export const verifyWebhookSignature = (payload: string, checksum?: string) => {
       })
       .join('') + timestamp + secret;
 
+    if (process.env.NODE_ENV === 'development') {
+      console.log('String for checksum:', concatenated);
+    }
+    
     const hash = crypto.createHash('sha256');
     hash.update(concatenated, 'utf8');
     const computedChecksum = hash.digest('hex');
     
-    if (computedChecksum !== checksum) {
-      console.error('Checksum mismatch. Computed:', computedChecksum, 'Received:', checksum);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Received checksum:', checksum);
+      console.log('Computed checksum:', computedChecksum);
+    }
+
+    // Usar una comparación segura para evitar ataques de temporización
+    const areEqual = crypto.timingSafeEqual(Buffer.from(computedChecksum, 'hex'), Buffer.from(checksum, 'hex'));
+
+    if (!areEqual) {
+      console.error('Checksum mismatch.');
       return false;
     }
 
