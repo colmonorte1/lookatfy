@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Script from "next/script";
+import SHA256 from "crypto-js/sha256";
 import {
   CreditCard,
   Calendar,
@@ -374,11 +375,7 @@ function CheckoutContent() {
       }
 
       const concatenated = `${reference}${amountInCents}${wompiCurrency}${integritySecret}`;
-      const encoder = new TextEncoder();
-      const dataToHash = encoder.encode(concatenated);
-      const hashBuffer = await crypto.subtle.digest("SHA-256", dataToHash);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const signature = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+      const signature = SHA256(concatenated).toString();
 
       const checkout = new window.WidgetCheckout({
         currency: wompiCurrency,
