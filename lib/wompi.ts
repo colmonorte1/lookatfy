@@ -172,11 +172,51 @@ export const createTransaction = async (input: {
 }
 
 export const verifyWebhookSignature = (payload: string, checksum?: string) => {
-  const secret = process.env.WOMPI_WEBHOOK_SECRET || ''
-  if (!secret || !checksum) return false
-  const computed = crypto
-    .createHmac('sha256', secret)
-    .update(payload, 'utf8')
-    .digest('hex')
-  return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(checksum))
+  const secret = process.env.WOMPI_WEBHOOK_SECRET;
+  if (!secret || !checksum) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('WOMPI_WEBHOOK_SECRET not configured. Skipping signature verification.');
+      return true; // En desarrollo, podríamos permitirlo para pruebas sin firma
+    }
+    return false;
+  }
+
+  try {
+    const event = JSON.parse(payload);
+    const signatureData = event.signature;
+    const timestamp = event.timestamp;
+
+    if (!signatureData || !Array.isArray(signatureData.properties) || !timestamp) {
+      console.error('Invalid signature data or timestamp in webhook payload.');
+      return false;
+    }
+
+    const concatenated = signatureData.properties
+      .map((prop: string) => {
+        // Acceder a propiedades anidadas como "transaction.id"
+        const value = prop.split('.').reduce((acc, part) => {
+          if (acc && typeof acc === 'object') {
+            return acc[part];
+          }
+          return undefined;
+        }, event.data);
+        
+        return value !== undefined && value !== null ? value : '';
+      })
+      .join('') + timestamp + secret;
+
+    const hash = crypto.createHash('sha256');
+    hash.update(concatenated, 'utf8');
+    const computedChecksum = hash.digest('hex');
+    
+    if (computedChecksum !== checksum) {
+      console.error('Checksum mismatch. Computed:', computedChecksum, 'Received:', checksum);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error verifying Wompi webhook signature:', error);
+    return false;
+  }
 }
