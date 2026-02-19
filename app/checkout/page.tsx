@@ -79,6 +79,14 @@ function CheckoutContent() {
   const [validatedCurrency, setValidatedCurrency] = useState<string | null>(null);
   const [priceValidationError, setPriceValidationError] = useState<string | null>(null);
 
+  const [wompiSession, setWompiSession] = useState<{
+    bookingId: string;
+    reference: string;
+    signature: string;
+    amountInCents: number;
+    currency: string;
+  } | null>(null);
+
   const [intent, setIntent] = useState<{
     title?: string;
     price?: number;
@@ -93,6 +101,9 @@ function CheckoutContent() {
     try {
       const raw = sessionStorage.getItem("checkout_intent");
       if (raw) setIntent(JSON.parse(raw));
+
+      const rawWompi = sessionStorage.getItem("wompi_session");
+      if (rawWompi) setWompiSession(JSON.parse(rawWompi));
     } catch {}
   }, []);
 
@@ -260,8 +271,51 @@ function CheckoutContent() {
     }
 
     setIsProcessing(true);
-    let createdBookingId: string | null = null;
 
+    const openWompiWidget = (session: {
+      bookingId: string;
+      reference: string;
+      signature: string;
+      amountInCents: number;
+      currency: string;
+    }) => {
+      const checkout = new window.WidgetCheckout({
+        currency: session.currency,
+        amountInCents: session.amountInCents,
+        reference: session.reference,
+        publicKey: process.env.NEXT_PUBLIC_WOMPI_PUBLIC_KEY || "",
+        signature: { integrity: session.signature },
+        redirectUrl: `${window.location.origin}/checkout/return?id=${session.bookingId}`,
+        customerData: {
+          email: formData.email,
+          fullName: `${formData.name} ${formData.surname}`.trim(),
+        },
+      });
+
+      checkout.open(function (result: any) {
+        setIsProcessing(false);
+        sessionStorage.removeItem("wompi_session"); // Clean up session
+        const transaction = result.transaction;
+        if (transaction) {
+          if (transaction.status === "APPROVED") {
+            router.push(`/checkout/return?id=${session.bookingId}`);
+          } else if (transaction.status === "DECLINED") {
+            showToast("Tu pago fue declinado. Por favor, intenta con otro método.", "error");
+          } else {
+            showToast("Hubo un error con la transacción. Por favor intenta de nuevo.", "error");
+          }
+        }
+      });
+    };
+
+    if (wompiSession) {
+      // If a session already exists, just reopen the widget
+      openWompiWidget(wompiSession);
+      return;
+    }
+
+    // If no session, create one
+    let createdBookingId: string | null = null;
     try {
       const supabase = createClient();
       const {
@@ -275,6 +329,7 @@ function CheckoutContent() {
         return;
       }
 
+      // Re-validate price just in case
       const { data: serviceData, error: serviceError } = await supabase
         .from("services")
         .select("price, currency")
@@ -290,21 +345,8 @@ function CheckoutContent() {
       const dbPrice = Number(serviceData.price);
       const dbCurrency = String(serviceData.currency);
 
-      if (Math.abs(dbPrice - price) > 0.01 || dbCurrency !== currency) {
-        showToast("Error: El precio no es válido. Recarga la página.", "error");
-        setIsProcessing(false);
-        return;
-      }
-
       const userTz =
-        userTimezonePref ||
-        (() => {
-          try {
-            return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-          } catch {
-            return "UTC";
-          }
-        })();
+        userTimezonePref || (() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")();
       const { data: expertRow } = await supabase
         .from("experts")
         .select("timezone")
@@ -330,7 +372,7 @@ function CheckoutContent() {
           user_timezone: userTz,
           status: "pending",
           price: dbPrice,
-          currency,
+          currency: dbCurrency,
           expires_at: expiresAt,
         })
         .select("id")
@@ -368,13 +410,12 @@ function CheckoutContent() {
       const amountInCents = Math.round(totalInCOP * 100);
       const reference = bookingId;
 
-      // Fetch signature from server-side API route
       const signatureResponse = await fetch("/api/payments/wompi/signature", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          reference: reference,
-          amountInCents: amountInCents,
+          reference,
+          amountInCents,
           currency: wompiCurrency,
         }),
       });
@@ -389,36 +430,29 @@ function CheckoutContent() {
         throw new Error("Received an invalid signature from the server.");
       }
 
-      const checkout = new window.WidgetCheckout({
+      // Create and save the session
+      const newWompiSession = {
+        bookingId,
+        reference,
+        signature,
+        amountInCents,
         currency: wompiCurrency,
-        amountInCents: amountInCents,
-        reference: reference,
-        publicKey: process.env.NEXT_PUBLIC_WOMPI_PUBLIC_KEY || "",
-        signature: { integrity: signature },
-        redirectUrl: `${window.location.origin}/checkout/return?id=${bookingId}`,
-        customerData: {
-          email: formData.email,
-          fullName: `${formData.name} ${formData.surname}`.trim(),
-        },
-      });
+      };
 
-      checkout.open(function (result: any) {
-        setIsProcessing(false);
-        const transaction = result.transaction;
-        console.log("Transaction ID: ", transaction.id);
-        console.log("Transaction object: ", transaction);
-        // The user will be redirected by Wompi via the redirectUrl
-        // No need to router.push here unless the modal is closed without payment
-      });
+      setWompiSession(newWompiSession);
+      sessionStorage.setItem("wompi_session", JSON.stringify(newWompiSession));
+
+      // Open the widget
+      openWompiWidget(newWompiSession);
     } catch (error) {
-      console.error(error);
+      console.error("Payment preparation error:", error);
       showToast("Hubo un error al preparar el pago. Por favor intenta de nuevo.", "error");
 
+      // Rollback booking creation if it happened
       if (createdBookingId) {
         const supabase = createClient();
         try {
           await supabase.from("bookings").delete().eq("id", createdBookingId);
-          console.log(`Booking ${createdBookingId} deleted due to payment preparation error.`);
         } catch (deleteError) {
           console.error(`Failed to delete booking ${createdBookingId}.`, deleteError);
         }
