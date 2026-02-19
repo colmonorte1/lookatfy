@@ -293,8 +293,9 @@ function CheckoutContent() {
       });
 
       checkout.open(function (result: any) {
+        console.log(result);
         setIsProcessing(false);
-        sessionStorage.removeItem("wompi_session"); // Clean up session
+        sessionStorage.removeItem("wompi_session");
         const transaction = result.transaction;
         if (transaction) {
           if (transaction.status === "APPROVED") {
