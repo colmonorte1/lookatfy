@@ -235,23 +235,6 @@ function CheckoutContent() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  useEffect(() => {
-    const fetchAcceptance = async () => {
-      try {
-        const isProd = process.env.NODE_ENV === "production";
-        const base = isProd ? "https://api.wompi.co/v1" : "https://sandbox.wompi.co/v1";
-        const pub = process.env.NEXT_PUBLIC_WOMPI_PUBLIC_KEY || "";
-        if (!pub) return;
-        const res = await fetch(`${base}/merchants/${pub}`, { cache: "no-store" });
-        const data = await res.json();
-        const policy = String(data?.data?.presigned_acceptance?.permalink || "");
-        const personal = String(data?.data?.presigned_personal_data_auth?.permalink || "");
-        setAcceptLinks({ policy, personal });
-      } catch {}
-    };
-    fetchAcceptance();
-  }, []);
-
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -291,27 +274,29 @@ function CheckoutContent() {
           fullName: `${formData.name} ${formData.surname}`.trim(),
         },
       });
-
       checkout.open(function (result: any) {
-        console.log(result);
-        setIsProcessing(false);
         sessionStorage.removeItem("wompi_session");
         const transaction = result.transaction;
         if (transaction) {
           if (transaction.status === "APPROVED") {
             router.push(`/checkout/return?id=${session.bookingId}`);
+            return;
           } else if (transaction.status === "DECLINED") {
             showToast("Tu pago fue declinado. Por favor, intenta con otro método.", "error");
           } else {
             showToast("Hubo un error con la transacción. Por favor intenta de nuevo.", "error");
           }
+        } else {
+          showToast("El pago fue cancelado.", "info");
         }
+        setIsProcessing(false);
       });
     };
 
     if (wompiSession) {
       // If a session already exists, just reopen the widget
       openWompiWidget(wompiSession);
+      setIsProcessing(false);
       return;
     }
 
@@ -445,6 +430,7 @@ function CheckoutContent() {
 
       // Open the widget
       openWompiWidget(newWompiSession);
+      setIsProcessing(false);
     } catch (error) {
       console.error("Payment preparation error:", error);
       showToast("Hubo un error al preparar el pago. Por favor intenta de nuevo.", "error");
