@@ -260,6 +260,7 @@ function CheckoutContent() {
     }
 
     setIsProcessing(true);
+    let createdBookingId: string | null = null;
 
     try {
       const supabase = createClient();
@@ -337,6 +338,7 @@ function CheckoutContent() {
 
       if (bookingError) throw bookingError;
       const bookingId = String(bookingRow.id);
+      createdBookingId = bookingId;
 
       if (selectedAddons.length) {
         const rows = addons
@@ -401,6 +403,17 @@ function CheckoutContent() {
     } catch (error) {
       console.error(error);
       showToast("Hubo un error al preparar el pago. Por favor intenta de nuevo.", "error");
+
+      if (createdBookingId) {
+        const supabase = createClient();
+        try {
+          await supabase.from("bookings").delete().eq("id", createdBookingId);
+          console.log(`Booking ${createdBookingId} deleted due to payment preparation error.`);
+        } catch (deleteError) {
+          console.error(`Failed to delete booking ${createdBookingId}.`, deleteError);
+        }
+      }
+
       setIsProcessing(false);
     }
   };
