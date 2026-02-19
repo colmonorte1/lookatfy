@@ -365,7 +365,7 @@ function CheckoutContent() {
 
       const amountInCents = Math.round(totalInCOP * 100);
       const reference = bookingId;
-      const integritySecret = process.env.NEXT_PUBLIC_WOMPI_INTEGRITY_SECRET || "";
+      const integritySecret = process.env.WOMPI_INTEGRITY_SECRET || "";
       if (!integritySecret) {
         showToast(
           "Error de configuración: La clave de integridad de Wompi no está configurada.",
