@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Script from "next/script";
-import SHA256 from "crypto-js/sha256";
+
 import {
   CreditCard,
   Calendar,
@@ -367,17 +367,27 @@ function CheckoutContent() {
 
       const amountInCents = Math.round(totalInCOP * 100);
       const reference = bookingId;
-      const integritySecret = process.env.WOMPI_INTEGRITY_SECRET || "";
-      if (!integritySecret) {
-        showToast(
-          "Error de configuración: La clave de integridad de Wompi no está configurada.",
-          "error",
-        );
-        throw new Error("Missing Wompi integrity secret");
+
+      // Fetch signature from server-side API route
+      const signatureResponse = await fetch("/api/payments/wompi/signature", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reference: reference,
+          amountInCents: amountInCents,
+          currency: wompiCurrency,
+        }),
+      });
+
+      if (!signatureResponse.ok) {
+        const errorData = await signatureResponse.json();
+        throw new Error(errorData.error || "Failed to generate payment signature.");
       }
 
-      const concatenated = `${reference}${amountInCents}${wompiCurrency}${integritySecret}`;
-      const signature = SHA256(concatenated).toString();
+      const { signature } = await signatureResponse.json();
+      if (!signature) {
+        throw new Error("Received an invalid signature from the server.");
+      }
 
       const checkout = new window.WidgetCheckout({
         currency: wompiCurrency,
