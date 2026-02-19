@@ -410,7 +410,7 @@ function CheckoutContent() {
 
   return (
     <div className="container" style={{ padding: "2rem 1rem", maxWidth: "1200px" }}>
-      <Script src="https://checkout.wompi.co/widget.js" strategy="beforeInteractive" />
+      <Script src="https://checkout.wompi.co/widget.js" strategy="afterInteractive" />
       <Link
         href="#"
         onClick={() => router.back()}
