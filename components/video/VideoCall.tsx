@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DailyIframe, { DailyCall } from '@daily-co/daily-js';
 import { DailyProvider } from '@daily-co/daily-react';
 import CallUI from './CallUI';
@@ -13,7 +13,7 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
     const [callError, setCallError] = useState<string | null>(null);
     const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
     const [warnSoon, setWarnSoon] = useState(false);
-    const [endReason, setEndReason] = useState<'none' | 'timer' | 'user'>('none');
+    const endReasonRef = useRef<'none' | 'timer' | 'user'>('none');
     const router = useRouter();
 
     useEffect(() => {
@@ -81,8 +81,8 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
                 });
 
                 newCallObject.on('left-meeting', () => {
-                    console.log('Left meeting. hasJoined=', hasJoined, 'reason=', endReason);
-                    if (endReason === 'timer' && bookingId && hasJoined) {
+                    console.log('Left meeting. hasJoined=', hasJoined, 'reason=', endReasonRef.current);
+                    if (bookingId && hasJoined) {
                         router.push(`/call/feedback/${bookingId}`);
                     }
                 });
@@ -122,7 +122,7 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
                             if (remain <= 600 && remain > 0) setWarnSoon(true);
                             if (remain === 0 && !closedByTimer) {
                                 closedByTimer = true;
-                                setEndReason('timer');
+                                endReasonRef.current = 'timer';
                                 try { newCallObject?.leave(); } catch {}
                             }
                         };
