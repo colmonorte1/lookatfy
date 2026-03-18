@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DailyIframe, { DailyCall } from '@daily-co/daily-js';
 import { DailyProvider } from '@daily-co/daily-react';
 import CallUI from './CallUI';
@@ -13,7 +13,8 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
     const [callError, setCallError] = useState<string | null>(null);
     const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
     const [warnSoon, setWarnSoon] = useState(false);
-    const [endReason, setEndReason] = useState<'none' | 'timer' | 'user'>('none');
+    const [recordingNoticeDismissed, setRecordingNoticeDismissed] = useState(false);
+    const endReasonRef = useRef<'none' | 'timer' | 'user'>('none');
     const router = useRouter();
 
     useEffect(() => {
@@ -81,8 +82,8 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
                 });
 
                 newCallObject.on('left-meeting', () => {
-                    console.log('Left meeting. hasJoined=', hasJoined, 'reason=', endReason);
-                    if (endReason === 'timer' && bookingId && hasJoined) {
+                    console.log('Left meeting. hasJoined=', hasJoined, 'reason=', endReasonRef.current);
+                    if (bookingId && hasJoined) {
                         router.push(`/call/feedback/${bookingId}`);
                     }
                 });
@@ -122,7 +123,7 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
                             if (remain <= 600 && remain > 0) setWarnSoon(true);
                             if (remain === 0 && !closedByTimer) {
                                 closedByTimer = true;
-                                setEndReason('timer');
+                                endReasonRef.current = 'timer';
                                 try { newCallObject?.leave(); } catch {}
                             }
                         };
@@ -190,6 +191,28 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
     return (
         <DailyProvider callObject={callObject}>
             <div style={{ position: 'relative', height: '100%' }}>
+                {!recordingNoticeDismissed && (
+                    <div style={{
+                        position: 'absolute', top: '1rem', left: '50%', transform: 'translateX(-50%)',
+                        zIndex: 20, background: 'rgba(0,0,0,0.82)', color: 'white',
+                        padding: '0.6rem 1rem', borderRadius: '0.5rem', fontSize: '0.85rem',
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        maxWidth: '480px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                    }}>
+                        <span style={{ fontSize: '1rem' }}>⏺</span>
+                        <span>Esta sesión puede ser grabada. Al continuar, aceptas la grabación.</span>
+                        <button
+                            onClick={() => setRecordingNoticeDismissed(true)}
+                            style={{
+                                background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white',
+                                borderRadius: '4px', padding: '0.2rem 0.5rem', cursor: 'pointer',
+                                fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap'
+                            }}
+                        >
+                            Entendido
+                        </button>
+                    </div>
+                )}
                 {remainingSeconds !== null && (
                     <div style={{ position: 'absolute', top: '1rem', right: '1rem', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                         {warnSoon && remainingSeconds > 0 && (

@@ -24,6 +24,7 @@ export type FinancialSummary = {
     currency: string;
     commissionRate: number;
     availableNetPreview: number;
+    minWithdrawal: number;
 };
 
 export async function getWithdrawalData() {
@@ -67,9 +68,10 @@ export async function getWithdrawalData() {
 
     const { data: settingsData } = await supabase
         .from('platform_settings')
-        .select('commission_percentage')
+        .select('commission_percentage, min_withdrawal')
         .single();
     const commissionRate = (Number(settingsData?.commission_percentage) || 10) / 100;
+    const minWithdrawal = Number(settingsData?.min_withdrawal) || 5000;
 
     // --- CALCULATIONS ---
 
@@ -107,7 +109,8 @@ export async function getWithdrawalData() {
             paid,
             currency: 'COP',
             commissionRate,
-            availableNetPreview
+            availableNetPreview,
+            minWithdrawal
         },
         withdrawals: allWithdrawals,
         banks: myBanks

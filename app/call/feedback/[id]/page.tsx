@@ -10,21 +10,15 @@ export default async function FeedbackPage({ params }: { params: Promise<{ id: s
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect('/login');
 
-    // Fetch booking to know who to rate
+    // Fetch booking
     const { data: booking, error } = await supabase
         .from('bookings')
-        .select(`
-            *,
-            expert:experts!expert_id(
-                id,
-                profile:profiles(full_name, avatar_url)
-            ),
-            user:profiles!user_id(full_name, avatar_url)
-        `)
+        .select('id, user_id, expert_id, status, date, time')
         .eq('id', id)
         .single();
 
     if (error || !booking) {
+        console.error('[FeedbackPage] booking query error:', error);
         return <div>Reserva no encontrada</div>;
     }
 
@@ -36,10 +30,16 @@ export default async function FeedbackPage({ params }: { params: Promise<{ id: s
         return <div>No tienes permiso para calificar esta sesión.</div>;
     }
 
-    // Who is being rated?
-    const subjectName = isExpert ? booking.user?.full_name : booking.expert?.profile?.full_name;
-    const subjectAvatar = isExpert ? booking.user?.avatar_url : booking.expert?.profile?.avatar_url;
+    // Fetch profiles separately to avoid complex nested join issues
     const subjectId = isExpert ? booking.user_id : booking.expert_id;
+    const { data: subjectProfile } = await supabase
+        .from('profiles')
+        .select('full_name, avatar_url')
+        .eq('id', subjectId)
+        .single();
+
+    const subjectName = subjectProfile?.full_name;
+    const subjectAvatar = subjectProfile?.avatar_url;
     const roleLabel = isExpert ? 'al Usuario' : 'al Experto';
 
     return (

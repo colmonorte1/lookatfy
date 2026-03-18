@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, User, Calendar, Clock, Briefcase, LogOut, DollarSign, AlertCircle, Wallet, Landmark } from 'lucide-react';
+import { LayoutDashboard, User, Calendar, Clock, Briefcase, LogOut, DollarSign, AlertCircle, Wallet, Landmark, Video, ExternalLink } from 'lucide-react';
 import styles from './ExpertSidebar.module.css';
 import { createClient } from '@/utils/supabase/client';
 
@@ -13,17 +13,25 @@ const MENU_ITEMS = [
     { href: '/expert/earnings', label: 'Mis Ganancias', icon: DollarSign },
     { href: '/expert/withdrawals', label: 'Mis Retiros', icon: Wallet },
     { href: '/expert/bookings', label: 'Mis Reservas', icon: Calendar },
+    { href: '/expert/recordings', label: 'Grabaciones', icon: Video },
     { href: '/expert/schedule', label: 'Mis Horarios', icon: Clock },
     { href: '/expert/disputes', label: 'Disputas', icon: AlertCircle },
     { href: '/expert/profile', label: 'Mi Perfil', icon: User },
     { href: '/expert/banks', label: 'Bancos', icon: Landmark },
-    //   { href: '/expert/settings', label: 'Configuración', icon: Settings },
 ];
 
 export const ExpertSidebar = () => {
     const pathname = usePathname();
     const router = useRouter();
     const [isOpen, setIsOpen] = useState(false);
+    const [expertId, setExpertId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const supabase = createClient();
+        supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user) setExpertId(user.id);
+        });
+    }, []);
 
     const handleLogout = async () => {
         const supabase = createClient();
@@ -75,6 +83,18 @@ export const ExpertSidebar = () => {
             </nav>
 
             <div className={styles.footer}>
+                {expertId && (
+                    <Link
+                        href={`/experts/${expertId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.logoutBtn}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', marginBottom: '0.5rem' }}
+                    >
+                        <ExternalLink size={20} />
+                        <span>Ver perfil público</span>
+                    </Link>
+                )}
                 <button className={styles.logoutBtn} onClick={handleLogout}>
                     <LogOut size={20} />
                     <span>Cerrar Sesión</span>

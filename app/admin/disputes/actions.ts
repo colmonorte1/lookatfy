@@ -4,6 +4,7 @@ import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { sendEmail } from '@/lib/email/brevo';
 import { disputeOpenedTemplate, disputeResolvedTemplate } from '@/lib/email/templates';
+import { logAdminAction } from '@/lib/audit';
 
 // --- User/Expert Actions ---
 
@@ -71,6 +72,9 @@ export async function createDispute(data: {
                 { cookies: { getAll: () => [], setAll: () => { } } }
             );
         }
+        const bookingDate = `${booking.date} ${booking.time || ''}`.trim();
+
+        // Notificar a admins (broadcast por rol)
         await writeClient.from('notifications').insert({
             target_role: 'admin',
             type: 'dispute_opened',
@@ -80,16 +84,36 @@ export async function createDispute(data: {
             status: 'unread',
             created_by: user.id,
         });
-        // Send email to admins
+
+        // Notificar al experto involucrado
+        if (booking.expert_id && booking.expert_id !== user.id) {
+            await writeClient.from('notifications').insert({
+                recipient_user_id: booking.expert_id,
+                type: 'dispute_opened',
+                title: 'Se abrió una disputa en tu reserva',
+                body: `Un cliente abrió una disputa para la sesión del ${bookingDate}. Revisa los detalles en tu panel.`,
+                data: { booking_id: data.booking_id },
+                status: 'unread',
+                created_by: user.id,
+            });
+        }
+
+        // Email a admins
         const { data: admins } = await writeClient.from('profiles').select('email, full_name').eq('role', 'admin');
         if (admins) {
-            const bookingDate = `${booking.date} ${booking.time || ''}`.trim();
             for (const admin of admins) {
                 if (admin.email) {
                     const html = disputeOpenedTemplate({ recipientName: admin.full_name || 'Admin', bookingDate, reason: data.reason, role: 'admin' });
                     await sendEmail({ to: admin.email, subject: 'Nueva disputa abierta', html }).catch(() => {});
                 }
             }
+        }
+
+        // Email al experto
+        const { data: expertProfile } = await writeClient.from('profiles').select('email, full_name').eq('id', booking.expert_id).single();
+        if (expertProfile?.email && booking.expert_id !== user.id) {
+            const html = disputeOpenedTemplate({ recipientName: expertProfile.full_name || 'Experto', bookingDate, reason: data.reason, role: 'expert' });
+            await sendEmail({ to: expertProfile.email, subject: 'Disputa abierta en tu reserva', html }).catch(() => {});
         }
     } catch {}
 
@@ -253,6 +277,18 @@ export async function resolveDispute(
     }
 
     revalidatePath('/admin/disputes');
+
+    await logAdminAction({
+        adminId: user?.id || '',
+        action: 'resolve_dispute',
+        targetType: 'dispute',
+        targetId: disputeId,
+        details: {
+            resolution: resolution.status,
+            resolution_notes: resolution.resolution_notes,
+            admin_notes: resolution.admin_notes,
+        },
+    });
 
     // Notify participants with resolution
     try {

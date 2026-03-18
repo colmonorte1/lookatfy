@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { logAdminAction } from '@/lib/audit';
 
 export async function POST(
     request: NextRequest,
@@ -114,18 +115,20 @@ export async function POST(
         // Create notification for user and expert
         const notifications = [
             {
-                user_id: booking.user_id,
+                recipient_user_id: booking.user_id,
                 title: '✅ Reserva confirmada',
-                message: `Tu pago ha sido confirmado. Tu reserva para el ${booking.date} a las ${booking.time} está lista. Podrás acceder a la reunión cuando llegue la hora.`,
-                type: 'booking',
-                read: false
+                body: `Tu pago ha sido confirmado. Tu reserva para el ${booking.date} a las ${booking.time} está lista. Podrás acceder a la reunión cuando llegue la hora.`,
+                type: 'booking_confirmed',
+                status: 'unread',
+                created_by: user.id,
             },
             {
-                user_id: booking.expert_id,
+                recipient_user_id: booking.expert_id,
                 title: '✅ Nueva reserva confirmada',
-                message: `Tienes una nueva reserva confirmada para el ${booking.date} a las ${booking.time}. Prepárate para la sesión.`,
-                type: 'booking',
-                read: false
+                body: `Tienes una nueva reserva confirmada para el ${booking.date} a las ${booking.time}. Prepárate para la sesión.`,
+                type: 'booking_confirmed',
+                status: 'unread',
+                created_by: user.id,
             }
         ];
 
@@ -135,6 +138,14 @@ export async function POST(
             console.error('Error creating notifications:', notificationError);
             // Don't fail the request if notifications fail
         }
+
+        await logAdminAction({
+            adminId: user.id,
+            action: 'approve_payment',
+            targetType: 'booking',
+            targetId: id,
+            details: { booking_date: booking.date, booking_time: booking.time, price: booking.price },
+        });
 
         return NextResponse.json({
             success: true,

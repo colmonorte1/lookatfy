@@ -34,6 +34,7 @@ export interface ProfileCompletionResult {
   completed: number;
   total: number;
   missingFields: string[];
+  fields: ProfileField[];
 }
 
 /**
@@ -55,7 +56,7 @@ export function calculateUserProfileCompletion(profile: UserProfile): ProfileCom
   const percentage = Math.round((completed / total) * 100);
   const missingFields = fields.filter(f => !f.completed).map(f => f.label);
 
-  return { percentage, completed, total, missingFields };
+  return { percentage, completed, total, missingFields, fields };
 }
 
 /**
@@ -67,14 +68,14 @@ export function calculateExpertProfileCompletion(
 ): ProfileCompletionResult {
   const fields: ProfileField[] = [
     { label: 'Foto de perfil', completed: !!profile.avatar_url },
-    { label: 'Nombre', completed: !!profile.first_name?.trim() },
+    { label: 'Nombres', completed: !!profile.first_name?.trim() },
     { label: 'Apellidos', completed: !!profile.last_name?.trim() },
     { label: 'Profesión/Título', completed: !!expert?.title?.trim() },
-    { label: 'Biografía (min 100 caracteres)', completed: !!expert?.bio?.trim() && expert.bio.length >= 100 },
+    { label: 'Biografía (min 100 caracteres)', completed: !!expert?.bio?.trim() && (expert.bio?.trim().length ?? 0) >= 100 },
     { label: 'Teléfono', completed: !!expert?.phone?.trim() },
     { label: 'País', completed: !!expert?.country?.trim() },
     { label: 'Ciudad', completed: !!expert?.city?.trim() },
-    { label: 'Zona horaria', completed: !!expert?.timezone },
+    { label: 'Zona Horaria', completed: !!expert?.timezone },
     { label: 'Idiomas (min 1)', completed: Array.isArray(expert?.languages) && expert.languages.length >= 1 },
     { label: 'Habilidades (min 1)', completed: Array.isArray(expert?.skills) && expert.skills.length >= 1 },
   ];
@@ -84,7 +85,7 @@ export function calculateExpertProfileCompletion(
   const percentage = Math.round((completed / total) * 100);
   const missingFields = fields.filter(f => !f.completed).map(f => f.label);
 
-  return { percentage, completed, total, missingFields };
+  return { percentage, completed, total, missingFields, fields };
 }
 
 /**

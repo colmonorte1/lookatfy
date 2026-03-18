@@ -129,6 +129,10 @@ export default function Controls({ roomUrl, bookingId }: { roomUrl: string; book
     const leaveCall = async () => {
         if (!callObject) return;
         try { await callObject.leave(); } catch {}
+        if (bookingId) {
+            router.push(`/call/feedback/${bookingId}`);
+            return;
+        }
         try {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();

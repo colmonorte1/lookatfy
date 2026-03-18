@@ -1,17 +1,23 @@
-import { createClient } from '@/utils/supabase/server';
 import { NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+
+export const runtime = 'nodejs';
 
 /**
- * API endpoint to automatically cancel expired pending bookings
- * Should be called periodically (e.g., every 5 minutes via cron job)
- *
- * Cancels bookings that:
- * - Have status 'pending'
- * - Have expires_at timestamp in the past
+ * API endpoint to automatically cancel expired pending bookings.
+ * Uses service role to bypass RLS for notifications insert.
  */
 export async function POST() {
     try {
-        const supabase = await createClient();
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_SUPABASE_SERVICE_ROLE_KEY;
+        if (!serviceRoleKey) {
+            return NextResponse.json({ error: 'Service role key required' }, { status: 500 });
+        }
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            serviceRoleKey,
+            { cookies: { getAll: () => [], setAll: () => {} } }
+        );
 
         // Find all pending bookings that have expired
         const now = new Date().toISOString();
@@ -56,22 +62,22 @@ export async function POST() {
             );
         }
 
-        // Create notifications for affected users
+        // Create notifications for affected users (campos correctos del schema)
         const notifications = expiredBookings.flatMap(booking => [
             {
-                user_id: booking.user_id,
-                title: '❌ Reserva cancelada',
-                message: `Tu reserva para el ${booking.date} a las ${booking.time} fue cancelada porque el pago no se confirmó a tiempo.`,
+                recipient_user_id: booking.user_id,
+                title: 'Reserva cancelada',
+                body: `Tu reserva para el ${booking.date} a las ${booking.time} fue cancelada porque el pago no se confirmó a tiempo.`,
                 type: 'booking',
-                read: false
+                status: 'unread',
             },
             {
-                user_id: booking.expert_id,
+                recipient_user_id: booking.expert_id,
                 title: 'Reserva cancelada',
-                message: `Una reserva pendiente para el ${booking.date} a las ${booking.time} fue cancelada por falta de confirmación de pago.`,
+                body: `Una reserva pendiente para el ${booking.date} a las ${booking.time} fue cancelada por falta de confirmación de pago.`,
                 type: 'booking',
-                read: false
-            }
+                status: 'unread',
+            },
         ]);
 
         const { error: notificationError } = await supabase

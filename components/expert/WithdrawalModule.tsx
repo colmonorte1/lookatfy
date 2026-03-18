@@ -4,8 +4,9 @@ import { useState, useMemo } from 'react';
 import { Withdrawal, FinancialSummary, requestWithdrawal } from '@/app/expert/withdrawals/actions';
 import { Button } from '@/components/ui/Button/Button';
 import { Input } from '@/components/ui/Input/Input';
-import { DollarSign, AlertCircle, CheckCircle, History, Info, X, Loader2, Clock, XCircle, TrendingUp, Search, Filter, Calendar } from 'lucide-react';
+import { DollarSign, AlertCircle, CheckCircle, History, Info, Loader2, Clock, XCircle, TrendingUp, Search, Filter, Calendar } from 'lucide-react';
 import { BankAccount } from '@/app/expert/banks/actions';
+import { useToast } from '@/components/ui/Toast/Toast';
 
 interface Props {
     summary: FinancialSummary;
@@ -18,9 +19,7 @@ export default function WithdrawalModule({ summary, withdrawals, banks }: Props)
     const [selectedBank, setSelectedBank] = useState('');
     const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
-
-    // Toast notification state
-    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
+    const { showToast } = useToast();
 
     // Confirmation modal state
     const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -32,12 +31,6 @@ export default function WithdrawalModule({ summary, withdrawals, banks }: Props)
 
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat('es-CO', { style: 'currency', currency: summary.currency }).format(val);
-    };
-
-    // Toast notification function
-    const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'error') => {
-        setToast({ message, type });
-        setTimeout(() => setToast(null), 4000);
     };
 
     // Quick amount buttons
@@ -187,7 +180,7 @@ export default function WithdrawalModule({ summary, withdrawals, banks }: Props)
         }
     };
 
-    const MINIMUM_WITHDRAWAL = 5000; // Minimum in summary.currency
+    const MINIMUM_WITHDRAWAL = summary.minWithdrawal;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -744,42 +737,6 @@ export default function WithdrawalModule({ summary, withdrawals, banks }: Props)
                 </div>
             )}
 
-            {/* Toast Notification */}
-            {toast && (
-                <div style={{
-                    position: 'fixed',
-                    top: '1.5rem',
-                    right: '1.5rem',
-                    background: toast.type === 'success' ? 'rgb(var(--success))' : toast.type === 'warning' ? 'rgb(var(--warning))' : 'rgb(var(--error))',
-                    color: 'white',
-                    padding: '1rem 1.5rem',
-                    borderRadius: 'var(--radius-md)',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    zIndex: 9999,
-                    maxWidth: '400px',
-                    fontWeight: 500,
-                    animation: 'slideIn 0.3s ease-out'
-                }}>
-                    {toast.message}
-                </div>
-            )}
-
-            <style>{`
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-                @keyframes slideIn {
-                    from {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                    to {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                }
-            `}</style>
         </div>
     );
 }

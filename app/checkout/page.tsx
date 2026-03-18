@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense, useCallback } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Script from "next/script";
 
@@ -10,15 +10,12 @@ import {
   Clock,
   ShieldCheck,
   ChevronLeft,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button/Button";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { buildLocalDate } from "@/utils/timezone";
+import { useToast } from "@/components/ui/Toast/Toast";
 
 // Let TypeScript know about the Wompi WidgetCheckout class on the window object
 declare global {
@@ -27,35 +24,13 @@ declare global {
   }
 }
 
-type ToastType = "success" | "error" | "warning" | "info";
-
-interface ToastMessage {
-  id: string;
-  message: string;
-  type: ToastType;
-}
-
 // Helper to wrap useSearchParams in Suspense
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [isProcessing, setIsProcessing] = useState(false);
   const [userTimezonePref, setUserTimezonePref] = useState<string | null>(null);
-
-  // Toast notification state
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  const showToast = useCallback((message: string, type: ToastType = "info") => {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 5000);
-  }, []);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  const { showToast } = useToast();
 
   // User Form State
   const [formData, setFormData] = useState({
@@ -73,6 +48,7 @@ function CheckoutContent() {
   const [acceptLinks, setAcceptLinks] = useState<{ policy?: string; personal?: string }>({});
 
   const [loadingUser, setLoadingUser] = useState(true);
+  const [serviceFees, setServiceFees] = useState<{ cop: number; usd: number }>({ cop: 2000, usd: 2 });
 
   // Validated price from database (to prevent URL manipulation)
   const [validatedPrice, setValidatedPrice] = useState<number | null>(null);
@@ -105,6 +81,14 @@ function CheckoutContent() {
       const rawWompi = sessionStorage.getItem("wompi_session");
       if (rawWompi) setWompiSession(JSON.parse(rawWompi));
     } catch {}
+
+    // Cargar tarifas de servicio desde platform_settings
+    fetch("/api/platform/fees")
+      .then((r) => r.json())
+      .then((fees) => {
+        if (fees?.cop && fees?.usd) setServiceFees(fees);
+      })
+      .catch(() => {}); // fallback a valores por defecto ya inicializados
   }, []);
 
   const serviceTitle = (intent?.title ?? searchParams.get("title")) || "Servicio Profesional";
@@ -360,6 +344,7 @@ function CheckoutContent() {
           price: dbPrice,
           currency: dbCurrency,
           expires_at: expiresAt,
+          notes: formData.notes.trim() || null,
         })
         .select("id")
         .single();
@@ -375,7 +360,7 @@ function CheckoutContent() {
         if (rows.length) await supabase.from("booking_addons").insert(rows);
       }
 
-      const serviceFee = dbCurrency === "COP" ? 2000 : 2;
+      const serviceFee = dbCurrency === "COP" ? serviceFees.cop : serviceFees.usd;
       const addonsTotal = addons
         .filter((a) => selectedAddons.includes(a.id))
         .reduce((sum, a) => sum + a.price, 0);
@@ -814,7 +799,7 @@ function CheckoutContent() {
                   }}
                 >
                   <span style={{ color: "rgb(var(--text-secondary))" }}>Tarifa de Servicio</span>
-                  <span>{formatAmount(displayCurrency, displayCurrency === "COP" ? 2000 : 2)}</span>
+                  <span>{formatAmount(displayCurrency, displayCurrency === "COP" ? serviceFees.cop : serviceFees.usd)}</span>
                 </div>
                 {selectedAddons.length > 0 &&
                   addons
@@ -847,7 +832,7 @@ function CheckoutContent() {
                     {formatAmount(
                       displayCurrency,
                       displayPrice +
-                        (displayCurrency === "COP" ? 2000 : 2) +
+                        (displayCurrency === "COP" ? serviceFees.cop : serviceFees.usd) +
                         addons
                           .filter((a) => selectedAddons.includes(a.id))
                           .reduce((sum, a) => sum + a.price, 0),
@@ -932,90 +917,6 @@ function CheckoutContent() {
         </div>
       </div>
 
-      {/* Toast Notifications */}
-      {toasts.length > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 24,
-            right: 24,
-            zIndex: 9999,
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.5rem",
-            maxWidth: "400px",
-          }}
-        >
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              style={{
-                background: "rgb(var(--surface))",
-                border: "1px solid rgb(var(--border))",
-                borderLeft: `4px solid ${
-                  toast.type === "success"
-                    ? "rgb(var(--success))"
-                    : toast.type === "error"
-                      ? "rgb(var(--error))"
-                      : toast.type === "warning"
-                        ? "rgb(var(--warning))"
-                        : "rgb(var(--primary))"
-                }`,
-                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                borderRadius: "8px",
-                padding: "0.875rem 1rem",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.75rem",
-                animation: "toastSlideIn 0.3s ease-out",
-              }}
-            >
-              {toast.type === "success" ? (
-                <CheckCircle size={20} style={{ color: "rgb(var(--success))", flexShrink: 0 }} />
-              ) : toast.type === "error" ? (
-                <XCircle size={20} style={{ color: "rgb(var(--error))", flexShrink: 0 }} />
-              ) : (
-                <AlertCircle
-                  size={20}
-                  style={{
-                    color: toast.type === "warning" ? "rgb(var(--warning))" : "rgb(var(--primary))",
-                    flexShrink: 0,
-                  }}
-                />
-              )}
-              <span style={{ flex: 1, fontSize: "0.9rem", color: "rgb(var(--text-main))" }}>
-                {toast.message}
-              </span>
-              <button
-                onClick={() => removeToast(toast.id)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: "0.25rem",
-                  color: "rgb(var(--text-secondary))",
-                  display: "flex",
-                  alignItems: "center",
-                }}
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <style>{`
-                @keyframes toastSlideIn {
-                    from {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                    to {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                }
-            `}</style>
     </div>
   );
 }

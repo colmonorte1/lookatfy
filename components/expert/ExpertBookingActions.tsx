@@ -74,8 +74,21 @@ export default function ExpertBookingActions({ bookingId, status, meetingUrl, da
     checkReview();
   }, [bookingId]);
 
-  if (status === 'completed' || status === 'cancelled') {
+  if (status === 'cancelled') {
     return null;
+  }
+
+  if (status === 'completed') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <span style={{ fontSize: '0.9rem', color: 'rgb(var(--text-secondary))' }}>Sesión completada</span>
+        {!hasReview && (
+          <Link href={`/call/feedback/${bookingId}`}>
+            <Button variant="outline" size="sm">Calificar usuario</Button>
+          </Link>
+        )}
+      </div>
+    );
   }
 
   if (status === 'pending') {
