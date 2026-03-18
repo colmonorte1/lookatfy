@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { CheckCircle, XCircle, AlertCircle, X } from 'lucide-react';
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 interface Toast {
     id: string;
@@ -15,6 +15,7 @@ interface ToastContextType {
     showToast: (message: string, type?: ToastType) => void;
     success: (message: string) => void;
     error: (message: string) => void;
+    warning: (message: string) => void;
     info: (message: string) => void;
 }
 
@@ -51,32 +52,29 @@ export function LocalToastProvider({ children }: ToastProviderProps) {
 
     const success = useCallback((message: string) => showToast(message, 'success'), [showToast]);
     const error = useCallback((message: string) => showToast(message, 'error'), [showToast]);
+    const warning = useCallback((message: string) => showToast(message, 'warning'), [showToast]);
     const info = useCallback((message: string) => showToast(message, 'info'), [showToast]);
 
     const getIcon = (type: ToastType) => {
         switch (type) {
-            case 'success':
-                return <CheckCircle size={20} color="rgb(var(--success))" />;
-            case 'error':
-                return <XCircle size={20} color="rgb(var(--error))" />;
-            default:
-                return <AlertCircle size={20} color="rgb(var(--primary))" />;
+            case 'success': return <CheckCircle size={20} color="rgb(var(--success))" />;
+            case 'error':   return <XCircle size={20} color="rgb(var(--error))" />;
+            case 'warning': return <AlertCircle size={20} color="rgb(var(--warning))" />;
+            default:        return <AlertCircle size={20} color="rgb(var(--primary))" />;
         }
     };
 
     const getBorderColor = (type: ToastType) => {
         switch (type) {
-            case 'success':
-                return 'rgb(var(--success))';
-            case 'error':
-                return 'rgb(var(--error))';
-            default:
-                return 'rgb(var(--primary))';
+            case 'success': return 'rgb(var(--success))';
+            case 'error':   return 'rgb(var(--error))';
+            case 'warning': return 'rgb(var(--warning))';
+            default:        return 'rgb(var(--primary))';
         }
     };
 
     return (
-        <ToastContext.Provider value={{ showToast, success, error, info }}>
+        <ToastContext.Provider value={{ showToast, success, error, warning, info }}>
             {children}
             <div style={{
                 position: 'fixed',
@@ -101,7 +99,7 @@ export function LocalToastProvider({ children }: ToastProviderProps) {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '0.75rem',
-                            animation: 'slideIn 0.3s ease-out'
+                            animation: 'toast-slide-in 0.3s ease-out'
                         }}
                     >
                         {getIcon(toast.type)}
@@ -125,18 +123,6 @@ export function LocalToastProvider({ children }: ToastProviderProps) {
                     </div>
                 ))}
             </div>
-            <style>{`
-                @keyframes slideIn {
-                    from {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                    to {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                }
-            `}</style>
         </ToastContext.Provider>
     );
 }

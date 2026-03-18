@@ -7,6 +7,7 @@ import { Save, User, MapPin, Upload, X, Eye, HelpCircle, CheckCircle2, AlertCirc
 import Image from 'next/image';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
+import { calculateExpertProfileCompletion } from '@/utils/profileCompletion';
 
 interface Profile {
     id: string;
@@ -136,30 +137,11 @@ export default function ProfileForm({ user, expert }: ProfileFormProps) {
         setTimeout(() => setToast(null), 4000);
     };
 
-    // Calculate profile completeness
-    const calculateProgress = () => {
-        const fields = [
-            { label: 'Avatar', completed: !!avatarUrl },
-            { label: 'Nombres', completed: !!formData.first_name.trim() },
-            { label: 'Apellidos', completed: !!formData.last_name.trim() },
-            { label: 'Profesión/Título', completed: !!formData.title.trim() },
-            { label: 'Biografía', completed: !!formData.bio.trim() && formData.bio.length >= 100 },
-            { label: 'Teléfono', completed: !!formData.phone.trim() },
-            { label: 'País', completed: !!formData.country.trim() },
-            { label: 'Ciudad', completed: !!formData.city.trim() },
-            { label: 'Zona Horaria', completed: !!formData.timezone },
-            { label: 'Idiomas (min 1)', completed: languages.length >= 1 },
-            { label: 'Skills (min 1)', completed: skills.length >= 1 },
-        ];
-
-        const completed = fields.filter(f => f.completed).length;
-        const total = fields.length;
-        const percentage = (completed / total) * 100;
-
-        return { fields, completed, total, percentage };
-    };
-
-    const progress = calculateProgress();
+    // Calculate profile completeness (using shared utility — same logic as dashboard)
+    const progress = calculateExpertProfileCompletion(
+        { avatar_url: avatarUrl, first_name: formData.first_name, last_name: formData.last_name },
+        { title: formData.title, bio: formData.bio, phone: formData.phone, city: formData.city, country: formData.country, timezone: formData.timezone, languages, skills }
+    );
 
     // Profile quality suggestions
     const getQualitySuggestions = () => {

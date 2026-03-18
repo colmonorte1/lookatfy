@@ -13,6 +13,7 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
     const [callError, setCallError] = useState<string | null>(null);
     const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
     const [warnSoon, setWarnSoon] = useState(false);
+    const [recordingNoticeDismissed, setRecordingNoticeDismissed] = useState(false);
     const endReasonRef = useRef<'none' | 'timer' | 'user'>('none');
     const router = useRouter();
 
@@ -190,6 +191,28 @@ export default function VideoCall({ roomUrl, userName, bookingId }: { roomUrl: s
     return (
         <DailyProvider callObject={callObject}>
             <div style={{ position: 'relative', height: '100%' }}>
+                {!recordingNoticeDismissed && (
+                    <div style={{
+                        position: 'absolute', top: '1rem', left: '50%', transform: 'translateX(-50%)',
+                        zIndex: 20, background: 'rgba(0,0,0,0.82)', color: 'white',
+                        padding: '0.6rem 1rem', borderRadius: '0.5rem', fontSize: '0.85rem',
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        maxWidth: '480px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                    }}>
+                        <span style={{ fontSize: '1rem' }}>⏺</span>
+                        <span>Esta sesión puede ser grabada. Al continuar, aceptas la grabación.</span>
+                        <button
+                            onClick={() => setRecordingNoticeDismissed(true)}
+                            style={{
+                                background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white',
+                                borderRadius: '4px', padding: '0.2rem 0.5rem', cursor: 'pointer',
+                                fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap'
+                            }}
+                        >
+                            Entendido
+                        </button>
+                    </div>
+                )}
                 {remainingSeconds !== null && (
                     <div style={{ position: 'absolute', top: '1rem', right: '1rem', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                         {warnSoon && remainingSeconds > 0 && (

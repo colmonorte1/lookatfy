@@ -2,6 +2,7 @@ import { DollarSign, Calendar, Clock, Star } from 'lucide-react';
 import { createClient } from '@/utils/supabase/server';
 import type { ComponentType } from 'react';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { ExpertSidebar } from '@/components/expert/ExpertSidebar';
 import ProfileCompletionAlert from '@/components/ProfileCompletionAlert';
 import { calculateExpertProfileCompletion } from '@/utils/profileCompletion';
@@ -71,9 +72,14 @@ export default async function ExpertDashboardPage({ searchParams }: { searchPara
         .single();
     const { data: expert } = await supabase
         .from('experts')
-        .select('rating, reviews_count, title, bio, phone, city, country, timezone, languages, skills')
+        .select('rating, reviews_count, title, bio, phone, city, country, timezone, languages, skills, complete_setup')
         .eq('id', user.id)
         .single();
+
+    // Redirigir al onboarding si el experto no ha completado el setup
+    if (expert && expert.complete_setup === false) {
+        redirect('/expert/onboarding');
+    }
     const { count: servicesCount } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('expert_id', user.id).eq('status', 'active');
     const { data: settingsData } = await supabase
         .from('platform_settings')

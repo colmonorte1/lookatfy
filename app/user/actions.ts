@@ -27,6 +27,18 @@ export async function cancelBooking(bookingId: string, reason?: string): Promise
         return { success: false, error: 'Cannot cancel an already completed or cancelled booking' };
     }
 
+    // Enforce 1-hour cancellation policy (server-side)
+    const sessionStart = booking.start_at
+        ? new Date(booking.start_at)
+        : (() => {
+            const dt = `${booking.date}T${String(booking.time || '00:00:00').slice(0, 8)}`;
+            return new Date(dt);
+        })();
+
+    if (!isNaN(sessionStart.getTime()) && sessionStart.getTime() - Date.now() < 60 * 60 * 1000) {
+        return { success: false, error: 'No puedes cancelar una reserva con menos de 1 hora de anticipación.' };
+    }
+
     const { error } = await supabase
         .from('bookings')
         .update({
@@ -39,11 +51,36 @@ export async function cancelBooking(bookingId: string, reason?: string): Promise
         return { success: false, error: error.message };
     }
 
-    // Notify expert about cancellation via email
+    const expertData = Array.isArray(booking.expert) ? booking.expert[0] : booking.expert;
+    const userData = Array.isArray(booking.user_profile) ? booking.user_profile[0] : booking.user_profile;
+    const serviceData = Array.isArray(booking.service) ? booking.service[0] : booking.service;
+
+    // In-app notification to expert
     try {
-        const expertData = Array.isArray(booking.expert) ? booking.expert[0] : booking.expert;
-        const userData = Array.isArray(booking.user_profile) ? booking.user_profile[0] : booking.user_profile;
-        const serviceData = Array.isArray(booking.service) ? booking.service[0] : booking.service;
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_SUPABASE_SERVICE_ROLE_KEY || '';
+        if (serviceRoleKey && booking.expert_id) {
+            const { createServerClient } = await import('@supabase/ssr');
+            const writeClient = createServerClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                serviceRoleKey,
+                { cookies: { getAll: () => [], setAll: () => {} } }
+            );
+            await writeClient.from('notifications').insert({
+                recipient_user_id: booking.expert_id,
+                type: 'booking_cancelled',
+                title: 'Reserva cancelada por el cliente',
+                body: `${userData?.full_name || 'Un cliente'} canceló la reserva de "${serviceData?.title || 'servicio'}" del ${booking.date} a las ${booking.time || ''}.${reason ? ` Motivo: ${reason}` : ''}`,
+                data: { booking_id: bookingId },
+                status: 'unread',
+                created_by: user.id,
+            });
+        }
+    } catch (e) {
+        console.error('Error creating expert notification:', e);
+    }
+
+    // Email notification to expert
+    try {
         if (expertData?.email) {
             const whenStr = `${booking.date} ${booking.time || ''}`.trim();
             const html = bookingCancelledTemplate({

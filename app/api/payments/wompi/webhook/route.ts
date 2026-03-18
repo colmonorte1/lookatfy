@@ -6,6 +6,15 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     const raw = await request.text();
+
+    // Verificar firma del webhook para evitar solicitudes fraudulentas
+    const checksum = request.headers.get("x-event-checksum") ?? undefined;
+    const isValid = verifyWebhookSignature(raw, checksum);
+    if (!isValid) {
+      console.error("WOMPI_WEBHOOK: firma inválida, solicitud rechazada.");
+      return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
+    }
+
     const payload = JSON.parse(raw);
     const tx = payload?.data?.transaction;
     const reference = tx?.reference as string | undefined;

@@ -12,9 +12,17 @@ function windowBounds(now: Date, minutesAhead: number, windowMinutes: number) {
   return { lower: lower.toISOString(), upper: upper.toISOString() }
 }
 
+export async function GET(request: Request) {
+  return POST(request);
+}
+
 export async function POST(request: Request) {
   const secret = process.env.CRON_SECRET || process.env.NEXT_CRON_SECRET
-  const provided = request.headers.get('x-cron-secret')
+  // Acepta tanto x-cron-secret como Authorization: Bearer (formato Vercel)
+  const xCronSecret = request.headers.get('x-cron-secret')
+  const authHeader = request.headers.get('authorization')
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  const provided = xCronSecret || bearerToken
   if (!secret || provided !== secret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -39,7 +47,7 @@ export async function POST(request: Request) {
   const { lower: lower24, upper: upper24 } = windowBounds(now, 24 * 60, WINDOW_MIN)
   const { lower: lower1, upper: upper1 } = windowBounds(now, 60, WINDOW_MIN)
 
-  const selectCols = 'id, start_at, meeting_url, status, user_id, expert_id, user_timezone, expert_timezone, service:services!service_id(title, duration), user:profiles!user_id(email, full_name), expert:experts!expert_id(profile:profiles(full_name))'
+  const selectCols = 'id, start_at, meeting_url, status, user_id, expert_id, user_timezone, expert_timezone, service:services!service_id(title, duration), user:profiles!user_id(email, full_name), expert:experts!expert_id(profile:profiles(email, full_name))'
 
   const { data: due24h } = await writeClient
     .from('bookings')

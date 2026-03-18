@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PROTECTED_ROUTES = ['/user', '/expert', '/admin']
+const PROTECTED_ROUTES = ['/user', '/expert', '/admin', '/call']
 const AUTH_ROUTES = ['/login', '/register', '/forgot-password']
 
 export async function updateSession(request: NextRequest) {
@@ -53,6 +53,20 @@ export async function updateSession(request: NextRequest) {
         const redirectUrl = new URL('/login', request.url)
         redirectUrl.searchParams.set('redirect', pathname)
         return NextResponse.redirect(redirectUrl)
+    }
+
+    // Verify admin role for /admin routes
+    if (user && pathname.startsWith('/admin')) {
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single()
+
+        if (profile?.role !== 'admin') {
+            const dashboard = profile?.role === 'expert' ? '/expert' : '/user'
+            return NextResponse.redirect(new URL(dashboard, request.url))
+        }
     }
 
     // Redirect authenticated users away from auth pages (login, register)

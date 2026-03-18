@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { logAdminAction } from '@/lib/audit';
 
 export async function POST(
     request: NextRequest,
@@ -73,18 +74,20 @@ export async function POST(
         // Create notification for user and expert
         const notifications = [
             {
-                user_id: booking.user_id,
+                recipient_user_id: booking.user_id,
                 title: 'Pago rechazado',
-                message: `Tu pago para la reserva ${id.slice(0, 8)} ha sido rechazado por el administrador. Contacta con soporte para más información.`,
-                type: 'payment',
-                read: false
+                body: `Tu pago para la reserva ${id.slice(0, 8)} ha sido rechazado por el administrador. Contacta con soporte para más información.`,
+                type: 'payment_rejected',
+                status: 'unread',
+                created_by: user.id,
             },
             {
-                user_id: booking.expert_id,
+                recipient_user_id: booking.expert_id,
                 title: 'Pago rechazado',
-                message: `El pago de la reserva ${id.slice(0, 8)} ha sido rechazado por el administrador.`,
-                type: 'payment',
-                read: false
+                body: `El pago de la reserva ${id.slice(0, 8)} ha sido rechazado por el administrador.`,
+                type: 'payment_rejected',
+                status: 'unread',
+                created_by: user.id,
             }
         ];
 
@@ -92,8 +95,15 @@ export async function POST(
 
         if (notificationError) {
             console.error('Error creating notifications:', notificationError);
-            // Don't fail the request if notifications fail
         }
+
+        await logAdminAction({
+            adminId: user.id,
+            action: 'reject_payment',
+            targetType: 'booking',
+            targetId: id,
+            details: { booking_date: booking.date, booking_time: booking.time, price: booking.price },
+        });
 
         return NextResponse.json({
             success: true,

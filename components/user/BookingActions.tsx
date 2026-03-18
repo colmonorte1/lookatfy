@@ -1,20 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button/Button';
-import { XCircle, Video as VideoIcon, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { XCircle, Video as VideoIcon, CheckCircle, AlertCircle } from 'lucide-react';
 import { cancelBooking } from '@/app/user/actions';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import { toISOTimeInTZ } from '@/utils/timezone';
-
-type ToastType = 'success' | 'error' | 'warning' | 'info';
-
-interface ToastMessage {
-    id: string;
-    message: string;
-    type: ToastType;
-}
+import { useToast } from '@/components/ui/Toast/Toast';
 
 interface BookingActionsProps {
     bookingId: string;
@@ -42,21 +35,7 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
     const [hasReview, setHasReview] = useState(false);
     const [existingDispute, setExistingDispute] = useState(dispute || null);
     type SimpleDispute = { id: string; status: string };
-
-    // Toast notification state
-    const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-    const showToast = useCallback((message: string, type: ToastType = 'info') => {
-        const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        setToasts(prev => [...prev, { id, message, type }]);
-        setTimeout(() => {
-            setToasts(prev => prev.filter(t => t.id !== id));
-        }, 4000);
-    }, []);
-
-    const removeToast = useCallback((id: string) => {
-        setToasts(prev => prev.filter(t => t.id !== id));
-    }, []);
+    const { showToast } = useToast();
 
     // DateTime Parsing Logic
     const getMeetingDateTime = () => {
@@ -529,78 +508,6 @@ export function BookingActions({ bookingId, status, meetingUrl, userName, date, 
                 </div>
             )}
 
-            {/* Toast Notifications */}
-            {toasts.length > 0 && (
-                <div style={{
-                    position: 'fixed',
-                    bottom: 24,
-                    right: 24,
-                    zIndex: 9999,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.5rem',
-                    maxWidth: '400px'
-                }}>
-                    {toasts.map(toast => (
-                        <div
-                            key={toast.id}
-                            style={{
-                                background: 'rgb(var(--surface))',
-                                border: '1px solid rgb(var(--border))',
-                                borderLeft: `4px solid ${toast.type === 'success' ? 'rgb(var(--success))' :
-                                        toast.type === 'error' ? 'rgb(var(--error))' :
-                                            toast.type === 'warning' ? 'rgb(var(--warning))' :
-                                                'rgb(var(--primary))'
-                                    }`,
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                                borderRadius: '8px',
-                                padding: '0.875rem 1rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.75rem',
-                                animation: 'slideIn 0.3s ease-out'
-                            }}
-                        >
-                            {toast.type === 'success' ? (
-                                <CheckCircle size={20} style={{ color: 'rgb(var(--success))', flexShrink: 0 }} />
-                            ) : toast.type === 'error' ? (
-                                <XCircle size={20} style={{ color: 'rgb(var(--error))', flexShrink: 0 }} />
-                            ) : (
-                                <AlertCircle size={20} style={{ color: toast.type === 'warning' ? 'rgb(var(--warning))' : 'rgb(var(--primary))', flexShrink: 0 }} />
-                            )}
-                            <span style={{ flex: 1, fontSize: '0.9rem', color: 'rgb(var(--text-main))' }}>
-                                {toast.message}
-                            </span>
-                            <button
-                                onClick={() => removeToast(toast.id)}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    padding: '0.25rem',
-                                    color: 'rgb(var(--text-secondary))',
-                                    display: 'flex',
-                                    alignItems: 'center'
-                                }}
-                            >
-                                <X size={16} />
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            )}
-            <style>{`
-                @keyframes slideIn {
-                    from {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                    to {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                }
-            `}</style>
         </div>
     );
 }

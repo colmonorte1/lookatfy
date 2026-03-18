@@ -5,8 +5,11 @@ import ExpertBookingActions from '@/components/expert/ExpertBookingActions';
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 
-export default async function ExpertBookingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-    const { tab } = await searchParams;
+const ITEMS_PER_PAGE = 10;
+
+export default async function ExpertBookingsPage({ searchParams }: { searchParams: Promise<{ tab?: string; page?: string }> }) {
+    const { tab, page: pageParam } = await searchParams;
+    const currentPage = Math.max(1, parseInt(pageParam || '1'));
     const supabase = await createClient();
 
     // Get current user (Expert)
@@ -101,6 +104,8 @@ export default async function ExpertBookingsPage({ searchParams }: { searchParam
 
             {(() => {
                 const currentBookings = tab === 'finalized' ? finalized : tab === 'problematic' ? problematic : scheduled;
+                const totalPages = Math.ceil(currentBookings.length / ITEMS_PER_PAGE);
+                const paginatedBookings = currentBookings.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
                 const emptyMessage = tab === 'finalized'
                     ? 'No tienes reservas finalizadas.'
                     : tab === 'problematic'
@@ -116,8 +121,9 @@ export default async function ExpertBookingsPage({ searchParams }: { searchParam
                 }
 
                 return (
+                    <>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {currentBookings.map(booking => {
+                        {paginatedBookings.map(booking => {
                         const customerName = booking.user?.full_name || booking.user?.email || 'Cliente';
                         const serviceTitle = booking.service?.title || 'Servicio';
                         const serviceType = booking.service?.type || 'Virtual';
@@ -162,6 +168,19 @@ export default async function ExpertBookingsPage({ searchParams }: { searchParam
                                                 <Clock size={14} /> {booking.time}
                                             </span>
                                         </div>
+                                        {(booking as any).notes && (
+                                            <div style={{
+                                                marginTop: '0.5rem',
+                                                padding: '0.5rem 0.75rem',
+                                                background: 'rgba(var(--primary), 0.06)',
+                                                borderLeft: '3px solid rgb(var(--primary))',
+                                                borderRadius: '0 var(--radius) var(--radius) 0',
+                                                fontSize: '0.85rem',
+                                                color: 'rgb(var(--text-secondary))'
+                                            }}>
+                                                <strong style={{ color: 'rgb(var(--text-main))' }}>Nota del cliente:</strong> {(booking as any).notes}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -232,7 +251,25 @@ export default async function ExpertBookingsPage({ searchParams }: { searchParam
                             </div>
                         );
                     })}
-                </div>
+                    </div>
+                    {totalPages > 1 && (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginTop: '2rem' }}>
+                            {currentPage > 1 && (
+                                <Link href={`?tab=${tab || 'scheduled'}&page=${currentPage - 1}`}>
+                                    <Button variant="outline" size="sm">← Anterior</Button>
+                                </Link>
+                            )}
+                            <span style={{ fontSize: '0.875rem', color: 'rgb(var(--text-secondary))', padding: '0 0.5rem' }}>
+                                Página {currentPage} de {totalPages}
+                            </span>
+                            {currentPage < totalPages && (
+                                <Link href={`?tab=${tab || 'scheduled'}&page=${currentPage + 1}`}>
+                                    <Button variant="outline" size="sm">Siguiente →</Button>
+                                </Link>
+                            )}
+                        </div>
+                    )}
+                    </>
                 );
             })()}
         </div>

@@ -90,11 +90,7 @@ export async function POST(request: Request) {
   }
 }
 
-// También permitir GET para testing
-export async function GET() {
-  return NextResponse.json({
-    message: 'Booking cleanup cron job endpoint',
-    usage: 'POST with Authorization: Bearer CRON_SECRET',
-    schedule: 'Every 15 minutes',
-  });
+// GET es el método que usan los crons de Vercel
+export async function GET(request: Request) {
+  return POST(request);
 }

@@ -6,31 +6,18 @@ export default async function DebugAuthPage() {
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!user) {
-        return (
-            <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-                <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>🔍 Debug de Autenticación</h1>
-                <div style={{
-                    background: 'rgba(var(--warning), 0.1)',
-                    padding: '1.5rem',
-                    borderRadius: 'var(--radius-lg)',
-                    border: '1px solid rgb(var(--warning))'
-                }}>
-                    <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>❌ No hay sesión activa</h2>
-                    <p style={{ marginBottom: '1rem' }}>No estás autenticado. Por favor, inicia sesión primero.</p>
-                    <a href="/login" style={{ color: 'rgb(var(--primary))', fontWeight: 600 }}>
-                        → Ir a Login
-                    </a>
-                </div>
-            </div>
-        );
-    }
+    if (!user) redirect('/login');
 
+    // Only admins can access this debug page
     const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
+
+    if (profile?.role !== 'admin') {
+        redirect(profile?.role === 'expert' ? '/expert' : '/user');
+    }
 
     return (
         <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto' }}>
